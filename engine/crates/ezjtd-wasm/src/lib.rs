@@ -59,6 +59,10 @@ impl JtdDocument {
 #[wasm_bindgen]
 pub struct JtdEditor {
     ed: Editor,
+    /// The .jtd the document came from (or was last saved as): saving as
+    /// .jtd patches this file.
+    original: Option<Vec<u8>>,
+    warnings: Vec<String>,
 }
 
 #[wasm_bindgen]
@@ -68,6 +72,8 @@ impl JtdEditor {
     pub fn new() -> JtdEditor {
         JtdEditor {
             ed: Editor::blank(),
+            original: None,
+            warnings: Vec::new(),
         }
     }
 
@@ -76,6 +82,8 @@ impl JtdEditor {
         let doc = ezjtd_core::open(bytes.to_vec()).map_err(js_err)?;
         Ok(JtdEditor {
             ed: Editor::new(doc),
+            original: Some(bytes.to_vec()),
+            warnings: Vec::new(),
         })
     }
 
@@ -299,6 +307,48 @@ impl JtdEditor {
     #[wasm_bindgen(js_name = toMarkdown)]
     pub fn to_markdown(&self) -> String {
         ezjtd_core::export::to_markdown(&self.ed.doc)
+    }
+    /// PDF from the rendered pages: `jpegs` is every page's JPEG one after
+    /// another, `lens` their byte lengths, `dims` pixel width/height pairs.
+    #[wasm_bindgen(js_name = toPdf)]
+    pub fn to_pdf(&mut self, jpegs: &[u8], lens: &[u32], dims: &[u32], title: &str) -> Vec<u8> {
+        let mut images = Vec::new();
+        let mut o = 0usize;
+        for (k, &n) in lens.iter().enumerate() {
+            let n = n as usize;
+            images.push(ezjtd_core::pdf::PageImage {
+                jpeg: jpegs[o..(o + n).min(jpegs.len())].to_vec(),
+                px_w: dims.get(2 * k).copied().unwrap_or(1),
+                px_h: dims.get(2 * k + 1).copied().unwrap_or(1),
+            });
+            o += n;
+        }
+        let pages = self.ed.layout().pages.clone();
+        ezjtd_core::pdf::to_pdf(&pages, &images, title)
+    }
+    /// Saving as .jtd is possible (the document was opened from a .jtd).
+    #[wasm_bindgen(js_name = canSaveJtd)]
+    pub fn can_save_jtd(&self) -> bool {
+        self.original.is_some()
+    }
+    /// The document as an Ichitaro file, made by patching the original.
+    /// Fails (with a message for the user) when an edit cannot be stored yet;
+    /// nothing is written in that case.
+    #[wasm_bindgen(js_name = toJtd)]
+    pub fn to_jtd(&mut self) -> Result<Vec<u8>, JsError> {
+        let orig = self
+            .original
+            .as_ref()
+            .ok_or_else(|| JsError::new("新規文書は一太郎形式でまだ保存できません"))?;
+        let s = ezjtd_core::save::save(orig, &self.ed.doc).map_err(js_err)?;
+        self.warnings = s.warnings;
+        self.original = Some(s.bytes.clone());
+        Ok(s.bytes)
+    }
+    /// Notes from the last .jtd save (JSON array of strings).
+    #[wasm_bindgen(js_name = saveWarnings)]
+    pub fn save_warnings(&self) -> String {
+        json(&self.warnings)
     }
     #[wasm_bindgen(js_name = markSaved)]
     pub fn mark_saved(&mut self) {

@@ -894,11 +894,13 @@ impl Editor {
                 left: c as u16 * w + 2,
                 right: (c as u16 + 1) * w - 2,
                 paragraphs: vec![Paragraph::default()],
+                src: Default::default(),
             })
             .collect();
         Row {
             cells,
             rules: vec![(0x13, w); cols + 1],
+            src: Default::default(),
         }
     }
 

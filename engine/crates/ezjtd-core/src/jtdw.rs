@@ -57,12 +57,21 @@ impl TextV {
         let subs = ssmg::substreams(raw)?;
         let head = &subs[0];
         if !head.starts_with(b"TextV.01") {
-            return Err(Error::Unsupported("only single-piece (TextV.01) documents can be written for now".into()));
+            return Err(Error::Unsupported(
+                "only single-piece (TextV.01) documents can be written for now".into(),
+            ));
         }
         let n = u32::from_be_bytes([head[8], head[9], head[10], head[11]]) as usize;
         let end = 12 + n * 2;
-        let units = head[12..end].chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
-        Ok(TextV { units, style: head[end..].to_vec(), rest: subs[1..].to_vec() })
+        let units = head[12..end]
+            .chunks_exact(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect();
+        Ok(TextV {
+            units,
+            style: head[end..].to_vec(),
+            rest: subs[1..].to_vec(),
+        })
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -89,7 +98,12 @@ impl TextV {
         for e in events {
             match e {
                 StyleEvent::Run(n) => {
-                    let n2 = if !done && pos >= cur && pos <= cur + n as usize { done = true; n + k } else { n };
+                    let n2 = if !done && pos >= cur && pos <= cur + n as usize {
+                        done = true;
+                        n + k
+                    } else {
+                        n
+                    };
                     cur += n as usize;
                     out.push(0x00);
                     out.extend_from_slice(&n2.to_be_bytes());
@@ -132,7 +146,11 @@ impl TextV {
     pub fn first_text_pos(&self) -> Option<usize> {
         let toks = crate::text::tokenize(&self.units);
         toks.iter().find_map(|t| match t {
-            crate::text::Token::Text { start, text } if text.chars().any(|c| !c.is_whitespace() && c != '\u{3000}') => Some(*start),
+            crate::text::Token::Text { start, text }
+                if text.chars().any(|c| !c.is_whitespace() && c != '\u{3000}') =>
+            {
+                Some(*start)
+            }
             _ => None,
         })
     }

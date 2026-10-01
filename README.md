@@ -7,28 +7,30 @@ in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP.
 > 一太郎の `.jtd` ファイルを、Mac・Linux・スマホ・ブラウザで開くためのオープンソースです。
 > ファイル形式の解析結果（仕様書）も公開しています。ファイルは端末の外に送信されません。
 
-Status: **v0.2 — reader + editor (developer preview).** Not affiliated with JustSystems.
+Status: **v0.3 — reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 ## What works
 
 Tested on 95 public Ichitaro files (Ichitaro 8 – 2018) published by Japanese ministries:
 
 - all 95 open; about 2 ms per file
-- body text: 97 % character match against the publisher's own Word export of the same document
+- body text: 99.9 % of the visible characters match what **Ichitaro Viewer itself** shows
+  (87 of 94 files identical), checked automatically with JustSystems' free viewer
+- edited files **save back to `.jtd`**, and Ichitaro Viewer opens them (see below)
 - paragraphs and alignment, ruled tables (merged cells, column widths, ruled/unruled lines)
 - font size, bold, underline, colour, ruby (furigana), page breaks
 - document properties, including the **original file path** that Ichitaro leaves inside files
 - export: plain text, Markdown, HTML, JSON
 
 Not yet: horizontal rules, indents and line spacing, page size and margins, pictures,
-vertical writing, `.jttc` (compressed), editing, saving back to `.jtd`. See the
+vertical writing, `.jttc` (compressed), saving a *new* document as `.jtd`. See the
 [roadmap](docs/PLAN.ko.md).
 
 ## Editor
 
 `web/dist/ezjtd-editor.html` is a word processor in one file: double-click it, drop a
-`.jtd` on the window (or start a new document), edit, and save as Word / PDF / HTML /
-text. Like rhwp-studio, the engine lays out and draws the pages itself (canvas); the
+`.jtd` on the window (or start a new document), edit, and save as **Ichitaro (.jtd)** /
+Word / PDF / HTML / text. Like rhwp-studio, the engine lays out and draws the pages itself (canvas); the
 browser only supplies keys, the Japanese input method and the screen.
 
 The screen and keys follow Ichitaro so its users feel at home: menu bar with a 罫線
@@ -39,7 +41,23 @@ center/right, Ctrl+↑/↓ size, Ctrl+Y page break, Ctrl+¥ table, F7 font, Ctrl
 Esc menu, and a Windows / Ichitaro key-map switch for Ctrl+F. No JustSystems artwork
 is used. Details: [docs/EDITOR.ko.md](docs/EDITOR.ko.md).
 
-Saving back to `.jtd` is not available yet (see the roadmap).
+### Saving as `.jtd`
+
+A document opened from a `.jtd` saves back to `.jtd` (Ctrl+S). The engine does not
+regenerate the file: it **patches the original**, so everything it does not understand
+yet (ruled-line geometry, hidden fields, macros, pictures) stays byte for byte. Text,
+paragraphs, bold / size / underline / colour, alignment, page breaks and table lines
+are written. Every save is read back and compared with the editor; if anything differs
+the save is refused with a reason and nothing is written (then use Word or PDF).
+
+Checked with JustSystems' own Ichitaro Viewer 2022, run automatically through Wine
+([tools/taroview](tools/taroview/README.md)): see [experiments/results.md](experiments/results.md).
+Full Ichitaro (the paid editor) has not been tested yet.
+
+### PDF
+
+Save as PDF writes the pages exactly as drawn on screen, with an invisible text layer
+so the PDF can still be searched and copied.
 
 ## Try it
 
@@ -62,7 +80,8 @@ cargo run --release -p ezjtd-cli -- json  sample.jtd      # document model
 cargo run --release -p ezjtd-cli -- info  sample.jtd      # properties, fonts, sheets
 ```
 
-Also `ezjtd docx <file> <out.docx>`. Research commands: `streams`, `dump <path>`, `tokens`, `styles`.
+Also `ezjtd docx <file> <out.docx>`. Research commands: `streams`, `dump <path>`, `tokens`, `styles`,
+`experiment <file> <dir>` (variants for checking in Ichitaro Viewer).
 
 **As a library (Rust):**
 
@@ -91,18 +110,26 @@ form as `.jtd` **and** `.doc`. Word's formatting is known, so lining the two fil
 up character by character tells us what each unknown JTD field means.
 `tools/research/` holds those scripts.
 
+Since v0.3 we also use **JustSystems' free Ichitaro Viewer as a referee**: files we
+change are opened in the real viewer (Wine, Japanese locale) and their text is
+copied back out and compared. That is how we found the per-storage stream directory
+(`\x04JSRV_SegmentInformation`) that must match every stream size.
+
 ## Repository
 
 ```
 engine/                Rust workspace
   crates/ezjtd-core    reader (CFB → block store → records → styles → model),
-                       editor (edit, layout on the 字×行 grid), exporters (docx, html, md)
+                       editor (edit, layout on the 字×行 grid), exporters (docx, pdf, html, md),
+                       writer (save.rs: patch the original; cfbw.rs: CFB writer)
   crates/ezjtd-cli     `ezjtd` command
   crates/ezjtd-wasm    WebAssembly bindings
 web/                   browser editor (editor.html + editor/app.js) and viewer, built to single files
 docs/spec/             format specification
 docs/research/         research notes and sample-making guides
 tools/                 corpus download and research scripts
+tools/taroview/        open files in the real Ichitaro Viewer (Wine) and read back what it shows
+experiments/           notes and results of the viewer checks
 corpus/manifest.tsv    URLs of public sample files (files themselves are not committed)
 ```
 

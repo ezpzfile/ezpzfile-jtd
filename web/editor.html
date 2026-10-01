@@ -258,12 +258,12 @@ dialog td:first-child { color: var(--ink-500); white-space: nowrap; }
   <div class="body">
     <label class="flabel">ファイル名 <input class="field" id="save-name"></label>
     <div class="opts">
+      <label><input type="radio" name="fmt" value="jtd"> <span>一太郎文書 (.jtd) <span class="muted" id="fmt-jtd-note"></span></span></label>
       <label><input type="radio" name="fmt" value="docx" checked> <span>Word 文書 (.docx) <span class="muted">— 表・文字飾り・ルビを保持</span></span></label>
-      <label><input type="radio" name="fmt" value="pdf"> <span>PDF <span class="muted">— 印刷画面から「PDF として保存」</span></span></label>
+      <label><input type="radio" name="fmt" value="pdf"> <span>PDF (.pdf) <span class="muted">— 画面と同じ見た目。文字の検索・コピーもできます</span></span></label>
       <label><input type="radio" name="fmt" value="html"> <span>Web ページ (.html)</span></label>
       <label><input type="radio" name="fmt" value="txt"> <span>テキスト (.txt)</span></label>
       <label><input type="radio" name="fmt" value="md"> <span>Markdown (.md)</span></label>
-      <label><input type="radio" name="fmt" value="jtd" disabled> <span>一太郎文書 (.jtd) <span class="muted">— 準備中</span></span></label>
     </div>
   </div>
   <footer><button class="pbtn" value="cancel">キャンセル</button><button class="pbtn primary" value="ok">保存</button></footer>

@@ -13,6 +13,7 @@ learned by reading public files, and every claim carries a confidence tag:
 | **observed** | Holds on every corpus file, meaning not proven |
 | **candidate** | A pattern that fits most data; may be wrong |
 | **unknown** | Seen, not understood. Preserve the bytes |
+| **viewer** | Checked by opening files we changed in JustSystems' own 一太郎ビューア 2022 (see `tools/taroview/`) |
 
 Corpus: 95 public Ichitaro files published by MEXT, 83 of them with a Word
 twin exported by the publisher from the same source (`corpus/manifest.tsv`).
@@ -50,6 +51,38 @@ Optional: `/TextLayoutStyle`, `/DocumentTextPositionTables`, `/PageLayoutStyle`,
 `/NumberingLink`, `/RelatedDocuments`, `/Frame`, `/FrameName`, `/FigureData/…`,
 `/DocItemInfo` + `/ObjectSheets/DocSheet/DOCS_nnnn/…` (multi-sheet documents),
 `/Embedding n/…`, `/OleItem n/…` (embedded objects).
+
+### 1.1 Stream directory `\x04JSRV_SegmentInformation` **new**
+
+Every storage that Ichitaro writes (the root, `DocumentMacro`, …) has a
+`\x04JSRV_SegmentInformation` stream listing its children **with their byte
+sizes**. Ichitaro Viewer refuses a file whose sizes do not match
+(「ファイルを読み込むことができません。」). **viewer**
+
+```
+"VDA_DOC\0"  …                         header
+u16 LE @14   offset of the first entry (0x90)
+u16 LE @16   entry size (0x60)
+u16 LE @18   entry count
+entry:       child name, UTF-16LE, 64 bytes, NUL padded
+             u32 LE 0
+             u32 LE byte size of the child stream (0 for a storage)
+             u32 LE kind (1, 2 for streams; 0 for storages)
+             padding to the entry size
+```
+**observed** on every corpus file. A writer must rewrite the sizes of the
+streams it changes and drop the entries of streams it removes (Ichitaro
+Viewer accepts both). **viewer**
+
+### 1.2 Layout caches **new**
+
+`/LineMark` starts with a small header (`09 08 00 00 00 01`, three u32
+counts) followed by `(u16 length, u16 flags)` pairs: the length in text units
+of each laid-out **line**, in order (paragraph wraps included).
+**observed** (checked against the units of two files). `/PageMark`,
+`/PaperMark` and `/DocumentTextPositionTables` (only 13 of 95 files) also
+index the text by position. Ichitaro Viewer opens files with these caches
+stale or removed, and lays the document out again. **viewer**
 
 Compressed variants (`.jttc`) keep the real document inside
 `/JSCompDocument` as an LHA `-lh5-` member (see OpenJTD RFC 0005). *Not yet
@@ -200,6 +233,24 @@ width is the `008F` width (e.g. 160 or 168). **observed**
 Horizontal rules are **not** in these records. Where they live (candidates:
 `LineMark`, `TextLayoutStyle`, the `0020` / `002A` items) is open.
 
+A one-cell line with no text (`0010` header, `0030` cell, `000E`, no
+`000A`) is an **empty line of the box**: it still takes a line and keeps the
+box's vertical rules. **viewer** A new line can be added to a box by copying
+a neighbouring line's header and cell records (Ichitaro Viewer draws the box
+one line taller). **viewer**
+
+### 4.4 Line headers inside a line **new**
+
+A class `0010` record that comes **after text and before the `000A`** does
+not start a new paragraph. 「（２）」+ three empty headers +
+「教育プロジェクトの内容…」 is one line in Ichitaro Viewer. The header's state
+applies from that point on and is inherited by the following paragraphs.
+**viewer** (our reader now agrees with Ichitaro Viewer on 99.9 % of the
+visible characters of 94 public files, 87 of them exactly)
+
+Header state is persistent like character styles: a paragraph without its
+own header uses the last header seen. **strong**
+
 ---
 
 ## 5. Character style events
@@ -268,8 +319,42 @@ user before they share a file. **confirmed**
 6. Vertical writing (縦書き)
 7. `/Header`, `/Footnote`, frames (`/Frame`, `LayoutBoxText`)
 8. `.jttc` (LHA) and pre-Ichitaro 8 files
-9. Writing: what must change in `LineMark` / `PageMark` /
-   `DocumentTextPositionTables` when text changes
+9. ~~Writing: what must change in the layout caches~~ — see §9
+10. Full Ichitaro (not only the viewer) has not been tested with written files
 
 The fastest way to close these is **paired samples**: the same document saved
 twice from Ichitaro with one setting changed. See `docs/research/`.
+
+---
+
+## 9. Writing (saving) **new**
+
+EZPZ File JTD saves by **patching the original file**, not by generating a
+new one (`engine/crates/ezjtd-core/src/save.rs`). What we know is enough to
+change text, paragraphs, character formatting, alignment, page breaks and
+table lines; what we do not understand is copied byte for byte.
+
+Rules that Ichitaro Viewer accepts (all **viewer**):
+
+1. CFB may be rewritten from scratch (`cfbw.rs`): any sector layout works.
+2. `/DocumentText` may be re-packed (`SsmgV.01`, 256-byte blocks, in order)
+   and grow by any number of blocks.
+3. Character styles may be re-encoded from the per-unit state: one change
+   event wherever the state changes, `00 n` runs elsewhere. A property that
+   must go back to "not set" is written with its neutral value (bold
+   `FFFF`, size `0`, underline `0`, colour `FFFFFFFF`). Keep the original's
+   choice of whether the list ends with `FF`.
+4. When the text changes, remove `/LineMark`, `/PageMark` and
+   `/DocumentTextPositionTables`; the viewer rebuilds the layout.
+5. Update `\x04JSRV_SegmentInformation` (§1.1). **Without this step any size
+   change makes the file unreadable.**
+6. Splitting a paragraph needs only a `000A`; the new paragraph inherits the
+   header state. A paragraph that must look different gets its own header.
+
+Every save is checked by reading the result back and comparing it with the
+edited document; on any difference the save is refused and nothing is
+written. On the corpus: random editing sessions save 96 % (text), 99 %
+(text + formatting) and 90 % (with tables and page breaks) of the time; the
+rest are refused with a reason (joining lines across a ruled box, a line
+break inside ruby, a table inside a box). Saved files are opened in
+Ichitaro Viewer by `tools/taroview/` — results in `experiments/results.md`.

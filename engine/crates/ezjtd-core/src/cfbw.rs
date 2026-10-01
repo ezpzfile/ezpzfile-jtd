@@ -26,8 +26,16 @@ pub struct Meta {
 
 #[derive(Debug, Clone)]
 pub enum Node {
-    Storage { name: String, meta: Meta, children: Vec<Node> },
-    Stream { name: String, meta: Meta, data: Vec<u8> },
+    Storage {
+        name: String,
+        meta: Meta,
+        children: Vec<Node>,
+    },
+    Stream {
+        name: String,
+        meta: Meta,
+        data: Vec<u8>,
+    },
 }
 
 impl Node {
@@ -48,20 +56,46 @@ pub struct Tree {
 impl Tree {
     /// Rebuild the tree of an existing file (all streams read into memory).
     pub fn from_cfb(c: &Cfb) -> Tree {
-        let root = c.entries().iter().find(|e| e.kind == EntryKind::Root).map(|e| Meta { clsid: e.clsid, state: e.state, ctime: e.ctime, mtime: e.mtime }).unwrap_or_default();
+        let root = c
+            .entries()
+            .iter()
+            .find(|e| e.kind == EntryKind::Root)
+            .map(|e| Meta {
+                clsid: e.clsid,
+                state: e.state,
+                ctime: e.ctime,
+                mtime: e.mtime,
+            })
+            .unwrap_or_default();
         fn build(c: &Cfb, parent: &str) -> Vec<Node> {
             let mut out = Vec::new();
             for e in c.children(parent) {
-                let meta = Meta { clsid: e.clsid, state: e.state, ctime: e.ctime, mtime: e.mtime };
+                let meta = Meta {
+                    clsid: e.clsid,
+                    state: e.state,
+                    ctime: e.ctime,
+                    mtime: e.mtime,
+                };
                 match e.kind {
-                    EntryKind::Storage => out.push(Node::Storage { name: e.name.clone(), meta, children: build(c, &e.path) }),
-                    EntryKind::Stream => out.push(Node::Stream { name: e.name.clone(), meta, data: c.read_entry(e) }),
+                    EntryKind::Storage => out.push(Node::Storage {
+                        name: e.name.clone(),
+                        meta,
+                        children: build(c, &e.path),
+                    }),
+                    EntryKind::Stream => out.push(Node::Stream {
+                        name: e.name.clone(),
+                        meta,
+                        data: c.read_entry(e),
+                    }),
                     EntryKind::Root => {}
                 }
             }
             out
         }
-        Tree { root, children: build(c, "/") }
+        Tree {
+            root,
+            children: build(c, "/"),
+        }
     }
 
     fn find_mut<'a>(nodes: &'a mut Vec<Node>, parts: &[&str]) -> Option<&'a mut Node> {
@@ -162,9 +196,92 @@ fn rb_tree(dir: &mut [DirEntry], ids: &[u32]) -> u32 {
     go(dir, ids, 0, full)
 }
 
+/// Name of JustSystems' per-storage directory stream.
+pub const SEGMENT_INFO: &str = "\u{4}JSRV_SegmentInformation";
+
+impl Tree {
+    /// Bring every `\x04JSRV_SegmentInformation` up to date: Ichitaro keeps,
+    /// per storage, a table of its children with their byte sizes and
+    /// refuses a file whose sizes do not match. Entries of removed children
+    /// are dropped; sizes are rewritten.
+    ///
+    /// Layout: `"VDA_DOC\0"`, …, u16 LE first-entry offset at 14, u16 LE
+    /// entry size at 16, u16 LE entry count at 18; each entry is the child
+    /// name (UTF-16LE, 64 bytes), u32 LE 0, u32 LE size, u32 LE kind, padding.
+    pub fn fix_segment_info(&mut self) {
+        fn fix(children: &mut Vec<Node>) {
+            for c in children.iter_mut() {
+                if let Node::Storage { children, .. } = c {
+                    fix(children);
+                }
+            }
+            let sizes: Vec<(String, Option<u32>)> = children
+                .iter()
+                .map(|c| match c {
+                    Node::Stream { name, data, .. } => (name.clone(), Some(data.len() as u32)),
+                    Node::Storage { name, .. } => (name.clone(), None),
+                })
+                .collect();
+            let Some(Node::Stream { data, .. }) =
+                children.iter_mut().find(|c| c.name() == SEGMENT_INFO)
+            else {
+                return;
+            };
+            if let Some(new) = rewrite_segment_info(data, &sizes) {
+                *data = new;
+            }
+        }
+        fix(&mut self.children);
+    }
+}
+
+fn rewrite_segment_info(b: &[u8], children: &[(String, Option<u32>)]) -> Option<Vec<u8>> {
+    if b.len() < 20 || &b[..8] != b"VDA_DOC\0" {
+        return None;
+    }
+    let u16le = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]) as usize;
+    let (first, size, count) = (u16le(14), u16le(16), u16le(18));
+    if size < 76 || first + size * count > b.len() {
+        return None;
+    }
+    let mut out = b[..first].to_vec();
+    let mut kept = 0u16;
+    for k in 0..count {
+        let e = &b[first + k * size..first + (k + 1) * size];
+        let units: Vec<u16> = e[..64]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        let n = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+        let name = String::from_utf16_lossy(&units[..n]);
+        let Some((_, sz)) = children.iter().find(|(c, _)| *c == name) else {
+            continue; // the child is gone
+        };
+        let mut e = e.to_vec();
+        if let Some(sz) = sz {
+            e[68..72].copy_from_slice(&sz.to_le_bytes());
+        }
+        out.extend_from_slice(&e);
+        kept += 1;
+    }
+    out[18..20].copy_from_slice(&kept.to_le_bytes());
+    out.extend_from_slice(&b[(first + size * count).min(b.len())..]);
+    Some(out)
+}
+
 pub fn write(tree: &Tree) -> Vec<u8> {
     // ---- flatten directory (root first) and collect stream data
-    let mut dir: Vec<DirEntry> = vec![DirEntry { name: "Root Entry".into(), kind: 5, color: 1, left: NOSTREAM, right: NOSTREAM, child: NOSTREAM, meta: tree.root.clone(), start: ENDOFCHAIN, size: 0 }];
+    let mut dir: Vec<DirEntry> = vec![DirEntry {
+        name: "Root Entry".into(),
+        kind: 5,
+        color: 1,
+        left: NOSTREAM,
+        right: NOSTREAM,
+        child: NOSTREAM,
+        meta: tree.root.clone(),
+        start: ENDOFCHAIN,
+        size: 0,
+    }];
     let mut datas: Vec<Option<Vec<u8>>> = vec![None];
     fn add(nodes: &[Node], dir: &mut Vec<DirEntry>, datas: &mut Vec<Option<Vec<u8>>>) -> Vec<u32> {
         let mut sorted: Vec<&Node> = nodes.iter().collect();
@@ -175,11 +292,35 @@ pub fn write(tree: &Tree) -> Vec<u8> {
             ids.push(id);
             match n {
                 Node::Stream { name, meta, data } => {
-                    dir.push(DirEntry { name: name.clone(), kind: 2, color: 1, left: NOSTREAM, right: NOSTREAM, child: NOSTREAM, meta: meta.clone(), start: ENDOFCHAIN, size: data.len() as u64 });
+                    dir.push(DirEntry {
+                        name: name.clone(),
+                        kind: 2,
+                        color: 1,
+                        left: NOSTREAM,
+                        right: NOSTREAM,
+                        child: NOSTREAM,
+                        meta: meta.clone(),
+                        start: ENDOFCHAIN,
+                        size: data.len() as u64,
+                    });
                     datas.push(Some(data.clone()));
                 }
-                Node::Storage { name, meta, children } => {
-                    dir.push(DirEntry { name: name.clone(), kind: 1, color: 1, left: NOSTREAM, right: NOSTREAM, child: NOSTREAM, meta: meta.clone(), start: 0, size: 0 });
+                Node::Storage {
+                    name,
+                    meta,
+                    children,
+                } => {
+                    dir.push(DirEntry {
+                        name: name.clone(),
+                        kind: 1,
+                        color: 1,
+                        left: NOSTREAM,
+                        right: NOSTREAM,
+                        child: NOSTREAM,
+                        meta: meta.clone(),
+                        start: 0,
+                        size: 0,
+                    });
                     datas.push(None);
                     let kids = add(children, dir, datas);
                     let root = rb_tree(dir, &kids);
@@ -209,7 +350,11 @@ pub fn write(tree: &Tree) -> Vec<u8> {
         let first = (mini_stream.len() / MINI) as u32;
         let n = data.len().div_ceil(MINI);
         for k in 0..n {
-            minifat.push(if k + 1 == n { ENDOFCHAIN } else { first + k as u32 + 1 });
+            minifat.push(if k + 1 == n {
+                ENDOFCHAIN
+            } else {
+                first + k as u32 + 1
+            });
         }
         dir[i].start = first;
         mini_stream.extend_from_slice(data);
@@ -229,7 +374,11 @@ pub fn write(tree: &Tree) -> Vec<u8> {
             let mut s = bytes[k * SECTOR..((k + 1) * SECTOR).min(bytes.len())].to_vec();
             s.resize(SECTOR, 0);
             sectors.push(s);
-            fat.push(if k + 1 == n { ENDOFCHAIN } else { first + k as u32 + 1 });
+            fat.push(if k + 1 == n {
+                ENDOFCHAIN
+            } else {
+                first + k as u32 + 1
+            });
         }
         first
     };
@@ -284,14 +433,20 @@ pub fn write(tree: &Tree) -> Vec<u8> {
     while (sectors.len() + nfat) > nfat * (SECTOR / 4) {
         nfat += 1;
     }
-    assert!(nfat <= 109, "file too large for the simple writer (needs DIFAT)");
+    assert!(
+        nfat <= 109,
+        "file too large for the simple writer (needs DIFAT)"
+    );
     let fat_start = sectors.len() as u32;
     for _ in 0..nfat {
         fat.push(FATSECT);
     }
     fat.resize(nfat * SECTOR / 4, FREESECT);
     for k in 0..nfat {
-        let s: Vec<u8> = fat[k * 128..(k + 1) * 128].iter().flat_map(|v| v.to_le_bytes()).collect();
+        let s: Vec<u8> = fat[k * 128..(k + 1) * 128]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
         sectors.push(s);
     }
 
@@ -306,12 +461,23 @@ pub fn write(tree: &Tree) -> Vec<u8> {
     h[44..48].copy_from_slice(&(nfat as u32).to_le_bytes());
     h[48..52].copy_from_slice(&dir_start.to_le_bytes());
     h[56..60].copy_from_slice(&(CUTOFF as u32).to_le_bytes());
-    h[60..64].copy_from_slice(&(if minifat_count == 0 { ENDOFCHAIN } else { minifat_start }).to_le_bytes());
+    h[60..64].copy_from_slice(
+        &(if minifat_count == 0 {
+            ENDOFCHAIN
+        } else {
+            minifat_start
+        })
+        .to_le_bytes(),
+    );
     h[64..68].copy_from_slice(&(minifat_count as u32).to_le_bytes());
     h[68..72].copy_from_slice(&ENDOFCHAIN.to_le_bytes());
     h[72..76].copy_from_slice(&0u32.to_le_bytes());
     for k in 0..109 {
-        let v = if k < nfat { fat_start + k as u32 } else { FREESECT };
+        let v = if k < nfat {
+            fat_start + k as u32
+        } else {
+            FREESECT
+        };
         h[76 + k * 4..80 + k * 4].copy_from_slice(&v.to_le_bytes());
     }
     let mut out = h;
@@ -330,12 +496,26 @@ mod tests {
         let tree = Tree {
             root: Meta::default(),
             children: vec![
-                Node::Stream { name: "Small".into(), meta: Meta::default(), data: b"hello".to_vec() },
-                Node::Stream { name: "Big".into(), meta: Meta::default(), data: vec![7u8; 10_000] },
+                Node::Stream {
+                    name: "Small".into(),
+                    meta: Meta::default(),
+                    data: b"hello".to_vec(),
+                },
+                Node::Stream {
+                    name: "Big".into(),
+                    meta: Meta::default(),
+                    data: vec![7u8; 10_000],
+                },
                 Node::Storage {
                     name: "Dir".into(),
                     meta: Meta::default(),
-                    children: (0..9).map(|i| Node::Stream { name: format!("S{i}"), meta: Meta::default(), data: vec![i as u8; 100 * i] }).collect(),
+                    children: (0..9)
+                        .map(|i| Node::Stream {
+                            name: format!("S{i}"),
+                            meta: Meta::default(),
+                            data: vec![i as u8; 100 * i],
+                        })
+                        .collect(),
                 },
             ],
         };
@@ -345,7 +525,10 @@ mod tests {
         assert_eq!(c.read("/Small").unwrap(), b"hello");
         assert_eq!(c.read("/Big").unwrap(), vec![7u8; 10_000]);
         for i in 0..9 {
-            assert_eq!(c.read(&format!("/Dir/S{i}")).unwrap(), vec![i as u8; 100 * i]);
+            assert_eq!(
+                c.read(&format!("/Dir/S{i}")).unwrap(),
+                vec![i as u8; 100 * i]
+            );
         }
     }
 }

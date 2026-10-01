@@ -428,7 +428,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo("文字数", [["文字数（空白を除く）", S.status.chars.toLocaleString()], ["ページ数", S.status.pages], ["選択範囲", $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo("JTD エディタについて", [["バージョン", "0.2 (開発版)"], ["内容", "一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。"], ["ライセンス", "MIT / Apache-2.0"], ["注意", "一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。"]]),
+  about: () => showInfo("JTD エディタについて", [["バージョン", "0.3 (開発版)"], ["内容", "一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。"], ["ライセンス", "MIT / Apache-2.0"], ["注意", "一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。"]]),
 };
 
 function edit(fn, record = true, name = null) {
@@ -872,7 +872,8 @@ async function openFile(file) {
     const ed = JtdEditor.open(bytes);
     S.setup = null;
     setEditor(ed, file.name.replace(/\.[^.]+$/, ""));
-    S.saveFmt = null;
+    // 上書き保存 writes the same kind of file it came from
+    S.saveFmt = ed.canSaveJtd() ? "jtd" : null;
     const s = JSON.parse(ed.summaryJson());
     if (s.template && /[\\:]/.test(s.template)) toast("この文書には元の保存場所が残っています（文書情報）");
     focusInput();
@@ -891,7 +892,12 @@ function save(ask) {
   if (!ask && S.saveFmt && S.saveFmt !== "pdf") return writeFile(S.saveFmt, S.name);
   const d = $("#dlg-save");
   $("#save-name").value = S.name;
-  $$('input[name="fmt"]', d).forEach((r) => (r.checked = r.value === (S.saveFmt || "docx")));
+  const canJtd = S.ed.canSaveJtd();
+  const jtd = $('input[name="fmt"][value="jtd"]', d);
+  jtd.disabled = !canJtd;
+  $("#fmt-jtd-note").textContent = canJtd ? "— 元の文書を書きかえて保存（罫線・書式をそのまま保持）" : "— 新規文書は準備中（一太郎文書を開いた場合に使えます）";
+  const def = S.saveFmt || (canJtd ? "jtd" : "docx");
+  $$('input[name="fmt"]', d).forEach((r) => (r.checked = r.value === def));
   d.returnValue = "";
   d.showModal();
   d.addEventListener("close", function h() {
@@ -900,20 +906,62 @@ function save(ask) {
     const fmt = $('input[name="fmt"]:checked', d).value;
     const name = $("#save-name").value.trim() || "無題";
     S.name = name;
-    if (fmt === "pdf") { printDoc(); return; }
-    S.saveFmt = fmt;
+    if (fmt !== "pdf") S.saveFmt = fmt;
     writeFile(fmt, name);
   });
 }
 function writeFile(fmt, name) {
   const ed = S.ed;
-  if (fmt === "docx") download(name + ".docx", ed.toDocx(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  if (fmt === "jtd") {
+    let bytes;
+    try {
+      bytes = ed.toJtd();
+    } catch (err) {
+      S.saveFmt = null;
+      showInfo("一太郎形式で保存できませんでした", [
+        ["理由", String(err.message || err)],
+        ["文書", "何も書き出していません。編集内容はこの画面に残っています。"],
+        ["ほかの方法", "Word (.docx) や PDF なら保存できます（名前を付けて保存）。"],
+      ]);
+      return;
+    }
+    download(name + ".jtd", bytes, "application/octet-stream");
+    for (const w of JSON.parse(ed.saveWarnings())) toast(w);
+  } else if (fmt === "pdf") {
+    savePdf(name);
+    return;
+  } else if (fmt === "docx") download(name + ".docx", ed.toDocx(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
   else if (fmt === "html") download(name + ".html", ed.toHtml(), "text/html");
   else if (fmt === "txt") download(name + ".txt", "﻿" + ed.toText(), "text/plain");
   else if (fmt === "md") download(name + ".md", ed.toMarkdown(), "text/markdown");
   ed.markSaved();
   refresh({ scroll: false });
   toast(`${name}.${fmt} を保存しました`);
+  focusInput();
+}
+
+/** Render every page to JPEG and let the engine wrap them (plus an invisible
+ *  text layer for search and copy) into a PDF. */
+async function savePdf(name) {
+  const n = S.ed.pageCount();
+  const k = 2.2; // ~200 dpi
+  const parts = [], lens = [], dims = [];
+  toast("PDF を作成しています…");
+  for (let i = 0; i < n; i++) {
+    const data = JSON.parse(S.ed.pageJson(i));
+    const c = el("canvas"); c.width = Math.round(data.w * k * PT); c.height = Math.round(data.h * k * PT);
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.setTransform(k * PT, 0, 0, k * PT, 0, 0);
+    paintItems(g, data, false);
+    const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.9));
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    parts.push(buf); lens.push(buf.length); dims.push(c.width, c.height);
+  }
+  const all = new Uint8Array(lens.reduce((a, b) => a + b, 0));
+  let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
+  const pdf = S.ed.toPdf(all, Uint32Array.from(lens), Uint32Array.from(dims), name);
+  download(name + ".pdf", pdf, "application/pdf");
+  toast(`${name}.pdf を保存しました`);
   focusInput();
 }
 

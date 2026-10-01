@@ -219,17 +219,30 @@ fn experiment(bytes: Vec<u8>, outdir: &str) -> Result<(), Box<dyn std::error::Er
     let raw = c.read("/DocumentText").ok_or("no DocumentText")?;
     let tv = TextV::parse(&raw)?;
     let mut log = String::new();
-    let mut put = |name: &str, data: Vec<u8>, note: &str| -> Result<(), Box<dyn std::error::Error>> {
-        std::fs::write(format!("{outdir}/{name}"), &data)?;
-        log.push_str(&format!("{name}\t{} bytes\t{note}\n", data.len()));
-        Ok(())
-    };
+    let mut put =
+        |name: &str, data: Vec<u8>, note: &str| -> Result<(), Box<dyn std::error::Error>> {
+            std::fs::write(format!("{outdir}/{name}"), &data)?;
+            log.push_str(&format!("{name}\t{} bytes\t{note}\n", data.len()));
+            Ok(())
+        };
     put("00-original.jtd", bytes, "untouched copy (control)")?;
-    put("01-repack.jtd", cfbw::write(&tree), "same streams, rewritten by our CFB writer")?;
+    put(
+        "01-repack.jtd",
+        cfbw::write(&tree),
+        "same streams, rewritten by our CFB writer",
+    )?;
     let same = ezjtd_core::ssmg::substreams(&tv.encode())? == ezjtd_core::ssmg::substreams(&raw)?;
     let mut t2 = tree.clone();
     t2.set_stream("/DocumentText", tv.encode());
-    put("02-textv-repack.jtd", cfbw::write(&t2), if same { "DocumentText re-encoded (same content; only unused block padding may differ)" } else { "DocumentText re-encoded (differs from original!)" })?;
+    put(
+        "02-textv-repack.jtd",
+        cfbw::write(&t2),
+        if same {
+            "DocumentText re-encoded (same content; only unused block padding may differ)"
+        } else {
+            "DocumentText re-encoded (differs from original!)"
+        },
+    )?;
     let pos = tv.first_text_pos().ok_or("no text run")?;
     // 03: replace one character, same length
     let mut tv3 = tv.clone();
@@ -237,7 +250,11 @@ fn experiment(bytes: Vec<u8>, outdir: &str) -> Result<(), Box<dyn std::error::Er
     tv3.units[pos] = '試' as u16;
     let mut t3 = tree.clone();
     t3.set_stream("/DocumentText", tv3.encode());
-    put("03-replace-1char.jtd", cfbw::write(&t3), &format!("first character '{old}' -> '試' (same length)"))?;
+    put(
+        "03-replace-1char.jtd",
+        cfbw::write(&t3),
+        &format!("first character '{old}' -> '試' (same length)"),
+    )?;
     // 04-06: insert text (length changes)
     let ins: Vec<u16> = "【EZPZ編集テスト】".encode_utf16().collect();
     let mut tv4 = tv.clone();
@@ -245,18 +262,34 @@ fn experiment(bytes: Vec<u8>, outdir: &str) -> Result<(), Box<dyn std::error::Er
     assert_eq!(tv4.style_coverage(), tv4.units.len());
     let mut t4 = tree.clone();
     t4.set_stream("/DocumentText", tv4.encode());
-    put("04-insert-keep-caches.jtd", cfbw::write(&t4), "inserted 【EZPZ編集テスト】, LineMark/PageMark left stale")?;
+    put(
+        "04-insert-keep-caches.jtd",
+        cfbw::write(&t4),
+        "inserted 【EZPZ編集テスト】, LineMark/PageMark left stale",
+    )?;
     let mut t5 = t4.clone();
     let a = t5.remove("/LineMark");
     let b = t5.remove("/PageMark");
-    put("05-insert-no-marks.jtd", cfbw::write(&t5), &format!("as 04, LineMark removed={a} PageMark removed={b}"))?;
+    put(
+        "05-insert-no-marks.jtd",
+        cfbw::write(&t5),
+        &format!("as 04, LineMark removed={a} PageMark removed={b}"),
+    )?;
     let mut t6 = t5.clone();
     let c6 = t6.remove("/DocumentTextPositionTables");
-    put("06-insert-no-caches.jtd", cfbw::write(&t6), &format!("as 05, DocumentTextPositionTables removed={c6}"))?;
+    put(
+        "06-insert-no-caches.jtd",
+        cfbw::write(&t6),
+        &format!("as 05, DocumentTextPositionTables removed={c6}"),
+    )?;
     let mut t7 = tree.clone();
     t7.remove("/LineMark");
     t7.remove("/PageMark");
-    put("07-nochange-no-marks.jtd", cfbw::write(&t7), "no text change, LineMark/PageMark removed")?;
+    put(
+        "07-nochange-no-marks.jtd",
+        cfbw::write(&t7),
+        "no text change, LineMark/PageMark removed",
+    )?;
     std::fs::write(format!("{outdir}/README.txt"), &log)?;
     print!("{log}");
     Ok(())
