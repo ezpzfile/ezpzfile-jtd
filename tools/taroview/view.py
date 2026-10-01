@@ -50,7 +50,7 @@ def main():
     status, detail, wid = "TIMEOUT", "", None
     t0 = time.time()
     bare_since = None
-    while time.time() - t0 < 40:
+    while time.time() - t0 < 40 + float(os.environ.get("TAROVIEW_WAIT", "15")):
         time.sleep(1.0)
         ws = windows()
         doc = [w for w in ws if name in w[1]]
@@ -70,7 +70,7 @@ def main():
             break
         if bare:
             bare_since = bare_since or time.time()
-            if time.time() - bare_since > 15:
+            if time.time() - bare_since > float(os.environ.get("TAROVIEW_WAIT", "15")):
                 status, detail, wid = "DIALOG", BARE + " (no document)", bare[0][0]
                 break
         if p.poll() is not None and not windows():
