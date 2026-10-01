@@ -35,6 +35,15 @@ pub struct Entry {
     pub size: u64,
     #[serde(skip)]
     start: u32,
+    /// Class id, state bits and timestamps, kept so a writer can reproduce them.
+    #[serde(skip)]
+    pub clsid: [u8; 16],
+    #[serde(skip)]
+    pub state: u32,
+    #[serde(skip)]
+    pub ctime: u64,
+    #[serde(skip)]
+    pub mtime: u64,
 }
 
 impl Entry {
@@ -64,6 +73,10 @@ struct RawDir {
     child: u32,
     start: u32,
     size: u64,
+    clsid: [u8; 16],
+    state: u32,
+    ctime: u64,
+    mtime: u64,
 }
 
 pub struct Cfb {
@@ -184,6 +197,8 @@ impl Cfb {
             } else {
                 u64le(chunk, 120)
             };
+            let mut clsid = [0u8; 16];
+            clsid.copy_from_slice(&chunk[80..96]);
             raw.push(RawDir {
                 name: String::from_utf16_lossy(&units),
                 kind: chunk[66],
@@ -192,6 +207,10 @@ impl Cfb {
                 child: u32le(chunk, 76),
                 start: u32le(chunk, 116),
                 size,
+                clsid,
+                state: u32le(chunk, 96),
+                ctime: u64le(chunk, 100),
+                mtime: u64le(chunk, 108),
             });
         }
         if raw.is_empty() || raw[0].kind != 5 {
@@ -210,6 +229,10 @@ impl Cfb {
             kind: EntryKind::Root,
             size: raw[0].size,
             start: raw[0].start,
+            clsid: raw[0].clsid,
+            state: raw[0].state,
+            ctime: raw[0].ctime,
+            mtime: raw[0].mtime,
         }];
         let mut visited = HashSet::new();
         visited.insert(0u32);
@@ -348,6 +371,10 @@ fn walk(
             kind,
             size: d.size,
             start: d.start,
+            clsid: d.clsid,
+            state: d.state,
+            ctime: d.ctime,
+            mtime: d.mtime,
         });
         if kind == EntryKind::Storage {
             walk(raw, d.child, &path, out, visited, warnings, depth + 1);

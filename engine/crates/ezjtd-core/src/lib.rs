@@ -16,11 +16,13 @@
 //! ```
 
 pub mod cfb;
+pub mod cfbw;
 pub mod doc;
 pub mod docx;
 pub mod edit;
 pub mod error;
 pub mod export;
+pub mod jtdw;
 pub mod layout;
 pub mod props;
 pub mod ssmg;

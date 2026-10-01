@@ -9,3 +9,6 @@
 /web/pkg/
 /web/dist/
 __pycache__/
+/experiments/shots/*.png
+/experiments/shots/*.txt
+/experiments/*/README.txt
