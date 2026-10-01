@@ -1,0 +1,28 @@
+//! ezjtd-core — reader for JustSystems Ichitaro documents (`.jtd`, `.jtt`).
+//!
+//! Layers, from the bottom up:
+//! - [`cfb`]: the compound-file container (a small file system inside one file)
+//! - [`ssmg`]: the block store inside `/DocumentText` (`SsmgV.01`, `TextV.01`, `QLSTV.01`)
+//! - [`text`]: text units → tokens (text, records, inline segments, controls)
+//! - [`style`]: character style events (size, bold, colour, …)
+//! - [`props`]: OLE property sets (`SummaryInformation`)
+//! - [`doc`]: the assembled model (sheets → paragraphs / tables)
+//! - [`export`]: HTML and Markdown output
+//!
+//! ```no_run
+//! let bytes = std::fs::read("sample.jtd").unwrap();
+//! let doc = ezjtd_core::open(bytes).unwrap();
+//! println!("{}", doc.plain_text());
+//! ```
+
+pub mod cfb;
+pub mod doc;
+pub mod error;
+pub mod export;
+pub mod props;
+pub mod ssmg;
+pub mod style;
+pub mod text;
+
+pub use doc::{open, Document};
+pub use error::{Error, Result};

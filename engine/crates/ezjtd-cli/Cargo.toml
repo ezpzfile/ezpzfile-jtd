@@ -1,0 +1,16 @@
+[package]
+name = "ezjtd-cli"
+description = "Command-line tool for inspecting and converting Ichitaro documents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ezjtd"
+path = "src/main.rs"
+
+[dependencies]
+ezjtd-core = { path = "../ezjtd-core" }
+serde_json.workspace = true

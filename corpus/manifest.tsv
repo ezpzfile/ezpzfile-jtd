@@ -1,0 +1,100 @@
+# Public Ichitaro documents with their Word/PDF twins, published by MEXT (文部科学省).
+# Files stay on your machine (corpus/local, git-ignored). Check the publisher's terms before redistributing.
+# Files are NOT committed. Run: python3 tools/fetch_corpus.py
+# jtd_url	pair_url
+https://www.mext.go.jp/a_menu/koutou/kaikaku/houka/boshu/__icsFiles/afieldfile/2015/07/24/1231707_001.jtd	https://www.mext.go.jp/a_menu/koutou/kaikaku/houka/boshu/__icsFiles/afieldfile/2015/07/24/1231707_001.pdf
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_001.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_001.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_002.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_002.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_003.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_003.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_004.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_004.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_005.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_005.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_006.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_006.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_007.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_007.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_008.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_008.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_009.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_010.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_010.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_011.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_011.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_012.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_012.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_013.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_013.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_014.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_014.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_015.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_015.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_016.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_016.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_017.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_017.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_018.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_018.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_019.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_019.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_020.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_020.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_021_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_022_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_023_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_024_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_025_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_026_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_027_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_028_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_029_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_030_1.jtd	
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_031.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_031.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_032.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_032.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_033.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_033.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_034.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_034.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_035.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_035.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_036.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_036.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_037.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_037.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_038.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_038.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_039.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_039.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_040.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_040.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_041.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_041.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_042.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_042.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_043.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_043.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_044.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_044.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_045.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_045.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_046.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_046.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_047.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_047.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_048.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_048.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_049.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/06/05/1258443_049.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_001.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_001.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_002.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_002.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_003.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_003.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_004.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_004.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_005.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_005.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_006.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_006.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_007.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_007.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_008.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_008.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_009.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_009.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_010.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_010.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_011.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_011.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_012.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_012.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_013.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_013.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_017.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_017.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_018.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_018.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_019.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_019.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_020.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_020.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_021.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_021.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_022.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_022.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_023.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231907_023.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_001.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_001.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_002.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_002.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_003.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_003.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_004.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2015/07/30/1231917_004.doc
+https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2016/02/02/1232813_001.jtd	https://www.mext.go.jp/component/a_menu/education/detail/__icsFiles/afieldfile/2016/02/02/1232813_001.pdf
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_001.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_001.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_002.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_002.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_003.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_003.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_004.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_004.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_005.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_005.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_006.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_006.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_007.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_007.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_008.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_008.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_009.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_009.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_010.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_010.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_011.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_011.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_012.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242588_012.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_001.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_001.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_002.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_002.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_003.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_003.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_004.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_004.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_005.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_005.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_006.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_006.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_007.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_007.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_008.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_008.doc
+https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_009.jtd	https://www.mext.go.jp/component/a_menu/science/detail/__icsFiles/afieldfile/2015/08/19/1242621_009.doc

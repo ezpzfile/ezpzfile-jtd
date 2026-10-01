@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EZPZ File JTD Viewer</title>
+<style>
+  :root { --bg:#f3f3f1; --fg:#1d1d1b; --muted:#6b6b66; --line:#d9d9d4; --accent:#2f5bd3; --panel:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1b1b1a; --fg:#ecece8; --muted:#a3a39c; --line:#3a3a37; --accent:#8aa8ff; --panel:#262624; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
+  header { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:15px; margin:0 8px 0 0; }
+  header .spacer { flex:1; }
+  button, label.btn { font:inherit; border:1px solid var(--line); background:var(--panel); color:var(--fg); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  #drop { margin:48px auto; max-width:560px; border:2px dashed var(--line); border-radius:12px; padding:48px 24px; text-align:center; color:var(--muted); }
+  #drop.over { border-color:var(--accent); color:var(--accent); }
+  #meta { max-width:210mm; margin:16px auto 0; padding:0 16px; color:var(--muted); font-size:12px; }
+  #meta .warn { color:#b4561b; }
+  #view { padding:16px; }
+  #err { color:#c0392b; text-align:center; margin:16px; }
+  .note { max-width:210mm; margin:8px auto; padding:0 16px; font-size:12px; color:var(--muted); }
+  @media print { header, #meta, .note, #drop, #err { display:none !important; } body { background:#fff; } #view { padding:0; } }
+</style>
+<style id="doc-css"></style>
+</head>
+<body>
+<header>
+  <h1>EZPZ File JTD</h1>
+  <label class="btn">ファイルを開く / Open .jtd<input id="file" type="file" accept=".jtd,.jtt" hidden></label>
+  <span class="spacer"></span>
+  <button id="dl-html" disabled>HTML</button>
+  <button id="dl-md" disabled>Markdown</button>
+  <button id="dl-txt" disabled>Text</button>
+  <button id="print" disabled>印刷 / PDF</button>
+</header>
+<div id="drop">一太郎ファイル（.jtd）をここにドロップ<br><small>ファイルはこのブラウザの中だけで処理され、どこにも送信されません。<br>Files never leave your device.</small></div>
+<div id="err"></div>
+<div id="meta"></div>
+<div id="view"></div>
+<p class="note">EZPZ File JTD v0.1 — 文字・表・文字サイズ・太字・下線・色・ルビに対応。罫線の横線、図、縦書きは未対応です。</p>
+
+<script type="module">
+/*__EZJTD_GLUE__*/
+const WASM_B64 = "/*__EZJTD_WASM__*/";
+
+function b64bytes(s) { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+let ready = (WASM_B64.startsWith("/*") ? __wbg_init() : __wbg_init({ module_or_path: b64bytes(WASM_B64) }));
+let current = null, baseName = "document";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function openFile(file) {
+  $("err").textContent = "";
+  try {
+    await ready;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    current = new JtdDocument(bytes);
+    baseName = file.name.replace(/\.[^.]+$/, "");
+    $("doc-css").textContent = JtdDocument.css().replace(/body\{[^}]*\}/, "");
+    $("view").innerHTML = current.html();
+    const s = JSON.parse(current.summaryJson());
+    const bits = [];
+    if (s.title) bits.push(`タイトル: ${esc(s.title)}`);
+    if (s.author) bits.push(`作成者: ${esc(s.author)}`);
+    if (s.application) bits.push(esc(s.application));
+    if (s.saved) bits.push(`保存: ${esc(s.saved)}`);
+    let html = bits.join(" · ");
+    if (s.template && /[\\:]/.test(s.template)) html += `<div class="warn">⚠ 元の保存場所がファイルに残っています: ${esc(s.template)}</div>`;
+    $("meta").innerHTML = html;
+    $("drop").style.display = "none";
+    document.querySelectorAll("header button").forEach((b) => (b.disabled = false));
+    document.title = `${file.name} — EZPZ File JTD`;
+  } catch (e) {
+    $("err").textContent = `開けませんでした: ${e.message || e}`;
+  }
+}
+
+function save(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$("file").addEventListener("change", (e) => e.target.files[0] && openFile(e.target.files[0]));
+const drop = $("drop");
+["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+document.addEventListener("drop", (e) => e.dataTransfer.files[0] && openFile(e.dataTransfer.files[0]));
+$("dl-txt").onclick = () => save(`${baseName}.txt`, "﻿" + current.text(), "text/plain");
+$("dl-md").onclick = () => save(`${baseName}.md`, current.markdown(), "text/markdown");
+$("dl-html").onclick = () => save(`${baseName}.html`, `<!doctype html><meta charset="utf-8"><title>${esc(baseName)}</title><style>${JtdDocument.css()}</style>${current.html()}`, "text/html");
+$("print").onclick = () => window.print();
+</script>
+</body>
+</html>

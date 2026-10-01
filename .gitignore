@@ -1,0 +1,11 @@
+/engine/target/
+/corpus/local/
+*.jtd
+*.jtt
+*.jttc
+*.jtdc
+!/engine/crates/**/tests/fixtures/*.jtd
+.DS_Store
+/web/pkg/
+/web/dist/
+__pycache__/

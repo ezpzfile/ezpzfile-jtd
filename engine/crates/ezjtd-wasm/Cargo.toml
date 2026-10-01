@@ -1,0 +1,16 @@
+[package]
+name = "ezjtd-wasm"
+description = "WebAssembly bindings for ezjtd-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ezjtd-core = { path = "../ezjtd-core" }
+serde_json.workspace = true
+wasm-bindgen = "0.2"
