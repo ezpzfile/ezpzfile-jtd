@@ -10,3 +10,13 @@ published research of:
   - OpenJTD  https://github.com/KimEJ/OpenJTD   (Apache-2.0) — RFC 0001–0009
   - Tika-JTD https://github.com/KHiyowa/Tika-JTD (Apache-2.0) — RFC 0001–0011
 No code was copied from those projects; findings are cited in docs/spec.
+
+User interface assets
+  - Icons: Lucide (https://lucide.dev), ISC License.
+      Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of
+      Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+      Permission to use, copy, modify, and/or distribute this software for any purpose
+      with or without fee is hereby granted, provided that the above copyright notice
+      and this permission notice appear in all copies.
+  - UI font: Pretendard (SIL Open Font License 1.1), loaded from jsDelivr when online.
+  - EZPZ File logo: (c) EZPZ File. Not covered by the MIT/Apache licences of the code.

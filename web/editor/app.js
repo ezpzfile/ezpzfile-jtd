@@ -137,7 +137,7 @@ function paintItems(g, data, marks) {
     const mm = 72 / 25.4;
     const L = (setup.width_mm * mm - setup.chars_per_line * setup.font_pt) / 2;
     const R = setup.width_mm * mm - L, T = setup.margin_top_mm * mm, B = setup.height_mm * mm - setup.margin_bottom_mm * mm;
-    g.strokeStyle = "#b9c3d6"; g.lineWidth = 0.5; g.beginPath();
+    g.strokeStyle = "#a8b0c4"; g.lineWidth = 0.5; g.beginPath();
     for (const [x, y, dx, dy] of [[L, T, -1, -1], [R, T, 1, -1], [L, B, -1, 1], [R, B, 1, 1]]) {
       g.moveTo(x + dx * 10, y); g.lineTo(x, y); g.lineTo(x, y + dy * 10);
     }
@@ -165,7 +165,7 @@ function paintItems(g, data, marks) {
       g.strokeStyle = it.color || "#111"; g.lineWidth = it.w;
       g.beginPath(); g.moveTo(it.x1, it.y1); g.lineTo(it.x2, it.y2); g.stroke();
     } else if (it.t === "Mark" && marks) {
-      g.strokeStyle = "#7aa0c8"; g.fillStyle = "#7aa0c8"; g.lineWidth = 0.6;
+      g.strokeStyle = "#6fa5ff"; g.fillStyle = "#6fa5ff"; g.lineWidth = 0.6;
       const z = it.size;
       if (it.k === "ret") { // 改行マーク
         const x = it.x + 1.5, y = it.y - z * 0.1;
@@ -273,8 +273,8 @@ function drawRuler() {
   const left = (setup.width_mm * mm - setup.chars_per_line * setup.font_pt) / 2;
   const x0 = pg.offsetLeft - sc.scrollLeft + left * s, cw = setup.font_pt * s;
   const css = getComputedStyle(document.documentElement);
-  g.fillStyle = css.getPropertyValue("--panel"); g.fillRect(x0, 3, cw * setup.chars_per_line, H - 6);
-  g.strokeStyle = css.getPropertyValue("--muted"); g.fillStyle = css.getPropertyValue("--muted");
+  g.fillStyle = css.getPropertyValue("--ink-50"); g.fillRect(x0, 4, cw * setup.chars_per_line, H - 8);
+  g.strokeStyle = css.getPropertyValue("--ink-300"); g.fillStyle = css.getPropertyValue("--ink-500");
   g.font = "9px sans-serif"; g.lineWidth = 1; g.beginPath();
   for (let k = 0; k <= setup.chars_per_line; k++) {
     const x = Math.round(x0 + k * cw) + 0.5, len = k % 10 === 0 ? 8 : k % 5 === 0 ? 5 : 3;
@@ -284,7 +284,7 @@ function drawRuler() {
   g.stroke();
   if (S.status) {
     const x = x0 + (S.status.col - 0.5) * cw;
-    g.fillStyle = css.getPropertyValue("--accent"); g.beginPath(); g.moveTo(x - 4, H - 1); g.lineTo(x + 4, H - 1); g.lineTo(x, H - 7); g.fill();
+    g.fillStyle = css.getPropertyValue("--brand-500"); g.beginPath(); g.moveTo(x - 4, H - 1); g.lineTo(x + 4, H - 1); g.lineTo(x, H - 7); g.fill();
   }
 }
 
@@ -294,13 +294,13 @@ function updateStatus() {
   $("#st-page").textContent = st.page; $("#st-line").textContent = st.line; $("#st-col").textContent = st.col;
   $("#st-pages").textContent = st.pages; $("#st-chars").textContent = st.chars.toLocaleString();
   $("#st-mode").textContent = st.overwrite ? "上書" : "挿入";
-  $("#st-zoom").value = Math.round(S.zoom * 100); $("#st-zv").textContent = Math.round(S.zoom * 100) + "%";
-  $("#st-marks").classList.toggle("pbtn", false);
-  $("#titlebar").classList.toggle("modified", st.modified);
+  $("#st-zv").textContent = Math.round(S.zoom * 100) + "%";
+  $("#st-marks").classList.toggle("on", S.marks);
+  $("#topbar").classList.toggle("modified", st.modified);
   $("#docname").textContent = S.name;
-  document.title = `${st.modified ? "● " : ""}${S.name} — EZPZ File JTD`;
+  document.title = `${st.modified ? "● " : ""}${S.name} — JTD エディタ`;
   for (const [id, on] of [["undo", st.can_undo], ["redo", st.can_redo]]) {
-    $$(`[data-cmd="${id}"]`).forEach((b) => (b.disabled = !on));
+    $$(`button[data-cmd="${id}"]`).forEach((b) => (b.disabled = !on));
   }
   $$('[data-cmd^="row"]').forEach((b) => (b.disabled = !st.in_table));
   $$("#pagelist li").forEach((li, i) => li.classList.toggle("cur", i === st.page - 1));
@@ -315,7 +315,7 @@ function updateStyleUi() {
   on("marks", S.marks);
   const size = String(s.size);
   for (const sel of $$(".size-select")) { if (!Array.from(sel.options).some((o) => o.value === size)) sel.append(el("option", { value: size, text: size })); sel.value = size; }
-  $$(".colorbar i").forEach((i) => (i.style.background = s.color || "#111"));
+  $$(".swatchline").forEach((i) => (i.style.background = s.color || "#0b1020"));
   const sel = S.ed.selectedText();
   $("#cnt-sel").textContent = sel ? Array.from(sel.replace(/\s/g, "")).length.toLocaleString() : "0";
   $("#cnt-all").textContent = S.status.chars.toLocaleString();
@@ -323,15 +323,40 @@ function updateStyleUi() {
 }
 
 let previewTimer = 0;
+const thumbObserver = new IntersectionObserver((ents) => {
+  for (const e of ents) if (e.isIntersecting && e.target.dataset.dirty === "1") drawThumb(e.target);
+}, { root: null, rootMargin: "200px" });
+function drawThumb(li) {
+  const i = +li.dataset.page;
+  const data = JSON.parse(S.ed.pageJson(i));
+  if (!data) return;
+  const c = $("canvas", li), w = c.clientWidth || 172, dpr = window.devicePixelRatio || 1;
+  const k = w / data.w;
+  c.width = Math.round(w * dpr); c.height = Math.round(data.h * k * dpr);
+  const g = c.getContext("2d");
+  g.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
+  paintItems(g, data, false);
+  li.dataset.dirty = "0";
+}
 function schedulePreviews() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(() => {
-    const list = JSON.parse(S.ed.previewsJson());
+    const n = S.ed.pageCount();
     const ul = $("#pagelist");
-    ul.replaceChildren(...list.map((t, i) => el("li", { onclick: () => { S.ed.gotoPage(i); refresh(); focusInput(); S.pages[i].div.scrollIntoView({ block: "start" }); } },
-      el("span", { class: "n", text: String(i + 1) }), el("span", { class: "t", text: t || "（空白ページ）" }))));
+    while (ul.children.length > n) { thumbObserver.unobserve(ul.lastChild); ul.lastChild.remove(); }
+    while (ul.children.length < n) {
+      const i = ul.children.length;
+      const li = el("li", { "data-page": i, title: `${i + 1} ページ` }, el("span", { class: "thumb" }, el("canvas")), el("span", { class: "n", text: String(i + 1) }));
+      li.addEventListener("click", () => { S.ed.gotoPage(i); refresh({ scroll: false }); focusInput(); S.pages[i].div.scrollIntoView({ block: "start" }); });
+      ul.append(li); thumbObserver.observe(li);
+    }
+    for (const li of ul.children) {
+      li.dataset.dirty = "1";
+      const r = li.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < window.innerHeight && !$("#jump").hidden && li.offsetParent) drawThumb(li);
+    }
     $$("#pagelist li").forEach((li, i) => li.classList.toggle("cur", i === S.status.page - 1));
-  }, 250);
+  }, 400);
 }
 
 function renderInfo() {
@@ -339,13 +364,13 @@ function renderInfo() {
   const rows = [["タイトル", s.title], ["作成者", s.author], ["最終保存者", s.last_author], ["作成", s.created], ["保存", s.saved], ["印刷", s.printed], ["作成ソフト", s.application], ["改訂", s.revision]].filter((r) => r[1]);
   const pane = $("#infopane");
   pane.replaceChildren();
-  if (!rows.length && !s.template) { pane.append(el("p", { class: "muted", text: "文書情報はありません。" })); return; }
+  if (!rows.length && !s.template) { pane.append(el("p", { class: "note", text: "文書情報はありません。" })); return; }
   const kv = el("div", { class: "kv" });
   for (const [k, v] of rows) kv.append(el("span", { text: k }), el("span", { text: v }));
   pane.append(kv);
   if (s.template && /[\\:]/.test(s.template)) {
-    pane.append(el("p", { class: "warn", text: "⚠ 元の保存場所がファイルに残っています:" }), el("p", { class: "warn", text: s.template }),
-      el("p", { class: "muted", text: "Word などで保存し直すと、この情報は含まれません。" }));
+    pane.append(el("div", { class: "warnbox" }, el("b", { text: "元の保存場所がファイルに残っています" }), el("span", { text: s.template }),
+      el("span", { text: "Word などで保存し直すと、この情報は含まれません。" })));
   }
 }
 
@@ -382,6 +407,7 @@ const CMDS = {
   zoomIn: () => rezoom(S.zoom + 0.1),
   zoomOut: () => rezoom(S.zoom - 0.1),
   zoom100: () => rezoom(1),
+  zoomFit: () => { const sc = $("#scroller"); rezoom((sc.clientWidth - 64) / (210 * (72 / 25.4) * PT)); },
   pageBreak: () => edit(() => S.ed.pageBreak(), true, "pageBreak"),
   table: () => openTableDialog(),
   date: () => edit(() => S.ed.insertText(wareki(new Date())), true),
@@ -402,7 +428,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo("文字数", [["文字数（空白を除く）", S.status.chars.toLocaleString()], ["ページ数", S.status.pages], ["選択範囲", $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo("EZPZ File JTD について", [["バージョン", "0.2 (開発版)"], ["内容", "一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。"], ["ライセンス", "MIT / Apache-2.0"], ["注意", "一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。"]]),
+  about: () => showInfo("JTD エディタについて", [["バージョン", "0.2 (開発版)"], ["内容", "一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。"], ["ライセンス", "MIT / Apache-2.0"], ["注意", "一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。"]]),
 };
 
 function edit(fn, record = true, name = null) {
@@ -418,7 +444,8 @@ function toggleView(which) {
   if (which === "palette") $("#main").classList.toggle("no-palette");
   if (which === "status") $("#app").classList.toggle("no-status");
   updateMenuChecks();
-  setTimeout(drawRuler, 0);
+  syncRail();
+  setTimeout(() => { drawRuler(); schedulePreviews(); }, 0);
 }
 
 function setKeymap(k) { S.keymap = k; store.set("keymap", k); updateMenuChecks(); buildMenus(); toast(k === "windows" ? "キー割付: Windows 標準 (Ctrl+F 検索)" : "キー割付: 一太郎標準 (Ctrl+F 段落)"); }
@@ -437,12 +464,12 @@ function menuDefs() {
   return [
     ["ファイル", "F", [["new", "新規作成", "Ctrl+N"], ["open", "開く...", "Ctrl+O"], "-", ["save", "上書き保存", "Ctrl+S"], ["saveAs", "名前を付けて保存...", "Ctrl+2"], "-", ["docInfo", "文書情報"], "-", ["print", "印刷...", "Ctrl+P"]]],
     ["編集", "E", [["undo", "元に戻す", "Ctrl+Z"], ["redo", "やり直し", "Ctrl+Shift+Z"], ["repeat", "繰り返し", "Ctrl+R"], "-", ["cut", "切り取り", "Ctrl+X"], ["copy", "コピー", "Ctrl+C"], ["paste", "貼り付け", "Ctrl+V"], "-", ["selectAll", "すべて選択", "Ctrl+A"], "-", ["find", "検索...", find], ["replace", "置換...", repl], ["jump", "ジャンプ", "Ctrl+J"]]],
-    ["表示", "V", [["marks", "編集記号", "", "check"], ["ruler", "ルーラー", "", "check"], ["jumpPalette", "ジャンプパレット", "", "check"], ["toolPalette", "ツールパレット", "", "check"], ["statusBar", "ステータスバー", "", "check"], "-", ["zoomIn", "拡大"], ["zoomOut", "縮小"], ["zoom100", "100%"]]],
+    ["表示", "V", [["marks", "編集記号", "", "check"], ["ruler", "ルーラー", "", "check"], ["jumpPalette", "ジャンプパレット", "", "check"], ["toolPalette", "ツールパレット", "", "check"], ["statusBar", "ステータスバー", "", "check"], "-", ["zoomIn", "拡大"], ["zoomOut", "縮小"], ["zoom100", "100%"], ["zoomFit", "幅に合わせる"]]],
     ["挿入", "I", [["pageBreak", "改ページ", "Ctrl+Y"], ["table", "表...", "Ctrl+¥"], ["date", "日付（和暦）"]]],
     ["書式", "O", [["bold", "太字", "Ctrl+B"], ["italic", "斜体", "Ctrl+I"], ["underline", "下線", "Ctrl+U"], "-", ["sizeUp", "文字を大きく", "Ctrl+↑"], ["sizeDown", "文字を小さく", "Ctrl+↓"], ["fontPalette", "フォント・飾り...", "F7"], "-", ["alignLeft", "左寄せ", "Ctrl+4"], ["alignCenter", "センタリング", "Ctrl+5"], ["alignRight", "右寄せ", "Ctrl+6"]]],
     ["罫線", "K", [["table", "表作成...", "Ctrl+¥"], "-", ["rowAbove", "行を上に挿入"], ["rowBelow", "行を下に挿入"], ["rowDelete", "行を削除"], "-", ["drawRules", "罫線モード（準備中）", "", "disabled"]]],
     ["ツール", "T", [["keymapWindows", "キー割付: Windows 標準", "", "radio"], ["keymapIchitaro", "キー割付: 一太郎標準", "", "radio"], "-", ["count", "文字数..."]]],
-    ["ヘルプ", "H", [["shortcuts", "ショートカットキー一覧"], ["about", "EZPZ File JTD について"]]],
+    ["ヘルプ", "H", [["shortcuts", "ショートカットキー一覧"], ["about", "JTD エディタについて"]]],
   ];
 }
 
@@ -452,13 +479,15 @@ function buildMenus() {
   bar.replaceChildren();
   for (const [label, key, items] of menuDefs()) {
     const m = el("div", { class: "menu" });
-    const btn = el("button", { "data-key": key }, label, "(", el("span", { class: "u", text: key }), ")");
+    const btn = el("button", { "data-key": key, "aria-haspopup": "menu" }, label, el("span", { class: "k", text: `(${key})` }));
     const drop = el("div", { class: "drop", role: "menu" });
     for (const it of items) {
       if (it === "-") { drop.append(el("hr")); continue; }
       const [cmd, text, sc, kind] = it;
-      const b = el("button", { "data-cmd": cmd, "data-kind": kind || "", role: "menuitem", disabled: kind === "disabled" },
-        el("span", { text }), el("span", { class: "sc", text: sc ? SC(sc) : "" }));
+      const b = el("button", { "data-cmd": cmd, "data-kind": kind || "", role: "menuitem", disabled: kind === "disabled" });
+      b.innerHTML = `<span class="chk">${ic("check")}</span><span class="lbl"></span><span class="sc"></span>`;
+      $(".lbl", b).textContent = text;
+      $(".sc", b).textContent = sc ? SC(sc) : "";
       b.addEventListener("click", () => { closeMenus(); CMDS[cmd]?.(); });
       drop.append(b);
     }
@@ -469,12 +498,18 @@ function buildMenus() {
   }
   updateMenuChecks();
 }
+
 function showMenu(m, focusFirst = false) {
   closeMenus(false);
   openMenu = m; m.classList.add("open");
+  // the menu bar scrolls on narrow screens, so drop-downs are placed in the viewport
+  const r = $("button", m).getBoundingClientRect(), d = $(".drop", m);
+  d.style.top = r.bottom + 4 + "px";
+  d.style.left = Math.max(8, Math.min(r.left, window.innerWidth - d.offsetWidth - 8)) + "px";
   updateMenuChecks();
   if (focusFirst) { const first = $(".drop button:not(:disabled)", m); first?.classList.add("active"); }
 }
+
 function closeMenus(refocus = true) {
   $$(".menu.open").forEach((m) => m.classList.remove("open"));
   $$(".drop button.active").forEach((b) => b.classList.remove("active"));
@@ -511,71 +546,94 @@ function menuKey(e) {
 }
 
 // ------------------------------------------------------------------ toolbar
-const ICON = {
-  new: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
-  open: '<path d="M3 7h6l2 2h10v10H3z"/>',
-  save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="5"/>',
-  print: '<path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="7" rx="1"/><path d="M7 14h10v6H7z"/>',
-  undo: '<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 010 10h-3"/>',
-  redo: '<path d="M15 7l4 4-4 4"/><path d="M19 11h-9a5 5 0 000 10h3"/>',
-  cut: '<circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/><path d="M9 15L18 4M15 15L6 4"/>',
-  copy: '<rect x="8" y="8" width="11" height="12" rx="1"/><path d="M5 16V4h11"/>',
-  alignLeft: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>',
-  alignCenter: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>',
-  alignRight: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
-  table: '<rect x="3" y="5" width="18" height="14"/><path d="M3 10h18M3 14h18M9 5v14M15 5v14"/>',
-  pageBreak: '<path d="M6 3v6h12V3M6 21v-6h12v6"/><path d="M3 12h3M9 12h2M13 12h2M18 12h3"/>',
-  find: '<circle cx="10" cy="10" r="6"/><path d="M15 15l5 5"/>',
-};
-function tb(cmd, title, inner, glyph = false) {
-  const b = el("button", { class: "tb", "data-cmd": cmd, title, "aria-label": title });
-  b.innerHTML = glyph ? `<span class="glyph">${inner}</span>` : `<svg viewBox="0 0 24 24">${inner}</svg>`;
+const ICONS = {"file-plus": "<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\" /> <path d=\"M14 2v4a2 2 0 0 0 2 2h4\" /> <path d=\"M9 15h6\" /> <path d=\"M12 18v-6\" />", "folder-open": "<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\" />", "save": "<path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\" /> <path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\" /> <path d=\"M7 3v4a1 1 0 0 0 1 1h7\" />", "printer": "<path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\" /> <path d=\"M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6\" /> <rect x=\"6\" y=\"14\" width=\"12\" height=\"8\" rx=\"1\" />", "undo-2": "<path d=\"M9 14 4 9l5-5\" /> <path d=\"M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11\" />", "redo-2": "<path d=\"m15 14 5-5-5-5\" /> <path d=\"M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13\" />", "scissors": "<circle cx=\"6\" cy=\"6\" r=\"3\" /> <path d=\"M8.12 8.12 12 12\" /> <path d=\"M20 4 8.12 15.88\" /> <circle cx=\"6\" cy=\"18\" r=\"3\" /> <path d=\"M14.8 14.8 20 20\" />", "copy": "<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\" /> <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\" />", "clipboard-paste": "<path d=\"M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1Z\" /> <path d=\"M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M16 4h2a2 2 0 0 1 2 2v2M11 14h10\" /> <path d=\"m17 10 4 4-4 4\" />", "table": "<path d=\"M12 3v18\" /> <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M3 9h18\" /> <path d=\"M3 15h18\" />", "separator-horizontal": "<line x1=\"3\" x2=\"21\" y1=\"12\" y2=\"12\" /> <polyline points=\"8 8 12 4 16 8\" /> <polyline points=\"16 16 12 20 8 16\" />", "calendar": "<path d=\"M8 2v4\" /> <path d=\"M16 2v4\" /> <rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /> <path d=\"M3 10h18\" />", "search": "<circle cx=\"11\" cy=\"11\" r=\"8\" /> <path d=\"m21 21-4.3-4.3\" />", "pilcrow": "<path d=\"M13 4v16\" /> <path d=\"M17 4v16\" /> <path d=\"M19 4H9.5a4.5 4.5 0 0 0 0 9H13\" />", "bold": "<path d=\"M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8\" />", "italic": "<line x1=\"19\" x2=\"10\" y1=\"4\" y2=\"4\" /> <line x1=\"14\" x2=\"5\" y1=\"20\" y2=\"20\" /> <line x1=\"15\" x2=\"9\" y1=\"4\" y2=\"20\" />", "underline": "<path d=\"M6 4v6a6 6 0 0 0 12 0V4\" /> <line x1=\"4\" x2=\"20\" y1=\"20\" y2=\"20\" />", "baseline": "<path d=\"M4 20h16\" /> <path d=\"m6 16 6-12 6 12\" /> <path d=\"M8 12h8\" />", "align-left": "<path d=\"M15 12H3\" /> <path d=\"M17 18H3\" /> <path d=\"M21 6H3\" />", "align-center": "<path d=\"M17 12H7\" /> <path d=\"M19 18H5\" /> <path d=\"M21 6H3\" />", "align-right": "<path d=\"M21 12H9\" /> <path d=\"M21 18H7\" /> <path d=\"M21 6H3\" />", "minus": "<path d=\"M5 12h14\" />", "plus": "<path d=\"M5 12h14\" /> <path d=\"M12 5v14\" />", "chevron-down": "<path d=\"m6 9 6 6 6-6\" />", "chevron-right": "<path d=\"m9 18 6-6-6-6\" />", "panel-left": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M9 3v18\" />", "panel-right": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M15 3v18\" />", "move-horizontal": "<path d=\"m18 8 4 4-4 4\" /> <path d=\"M2 12h20\" /> <path d=\"m6 8-4 4 4 4\" />", "type": "<polyline points=\"4 7 4 4 20 4 20 7\" /> <line x1=\"9\" x2=\"15\" y1=\"20\" y2=\"20\" /> <line x1=\"12\" x2=\"12\" y1=\"4\" y2=\"20\" />", "table-2": "<path d=\"M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18\" />", "hash": "<line x1=\"4\" x2=\"20\" y1=\"9\" y2=\"9\" /> <line x1=\"4\" x2=\"20\" y1=\"15\" y2=\"15\" /> <line x1=\"10\" x2=\"8\" y1=\"3\" y2=\"21\" /> <line x1=\"16\" x2=\"14\" y1=\"3\" y2=\"21\" />", "info": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 16v-4\" /> <path d=\"M12 8h.01\" />", "between-horizontal-start": "<rect width=\"13\" height=\"7\" x=\"8\" y=\"3\" rx=\"1\" /> <path d=\"m2 9 3 3-3 3\" /> <rect width=\"13\" height=\"7\" x=\"8\" y=\"14\" rx=\"1\" />", "between-horizontal-end": "<rect width=\"13\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\" /> <path d=\"m22 15-3-3 3-3\" /> <rect width=\"13\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\" />", "trash-2": "<path d=\"M3 6h18\" /> <path d=\"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6\" /> <path d=\"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2\" /> <line x1=\"10\" x2=\"10\" y1=\"11\" y2=\"17\" /> <line x1=\"14\" x2=\"14\" y1=\"11\" y2=\"17\" />", "x": "<path d=\"M18 6 6 18\" /> <path d=\"m6 6 12 12\" />", "keyboard": "<path d=\"M10 8h.01\" /> <path d=\"M12 12h.01\" /> <path d=\"M14 8h.01\" /> <path d=\"M16 12h.01\" /> <path d=\"M18 8h.01\" /> <path d=\"M6 8h.01\" /> <path d=\"M7 16h10\" /> <path d=\"M8 12h.01\" /> <rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\" />", "check": "<path d=\"M20 6 9 17l-5-5\" />", "file-text": "<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\" /> <path d=\"M14 2v4a2 2 0 0 0 2 2h4\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" />"};
+/** Lucide icon (ISC licence), same set as ezpzfile.com. */
+const ic = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
+
+function ibtn(cmd, title, icon) {
+  const b = el("button", { class: "ib", "data-cmd": cmd, title, "aria-label": title });
+  b.innerHTML = ic(icon);
   b.addEventListener("mousedown", (e) => e.preventDefault());
   b.addEventListener("click", () => CMDS[cmd]());
   return b;
 }
+const vsep = () => el("span", { class: "vsep" });
+const SIZE_LIST = [6, 7, 8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48, 56, 64, 72];
 function sizeSelect() {
-  const s = el("select", { class: "size-select", id: "tb-size", title: "文字サイズ" });
-  for (const v of [6, 7, 8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48, 56, 64, 72]) s.append(el("option", { value: String(v), text: String(v) }));
+  const s = el("select", { class: "size-select", title: "文字サイズ", "aria-label": "文字サイズ" });
+  for (const v of SIZE_LIST) s.append(el("option", { value: String(v), text: String(v) }));
   s.addEventListener("change", () => edit(() => S.ed.setSize(parseFloat(s.value)), true));
   return s;
 }
+function sizeControl() {
+  const minus = el("button", { class: "mini", title: "文字を小さく (Ctrl+↓)", "aria-label": "文字を小さく" });
+  const plus = el("button", { class: "mini", title: "文字を大きく (Ctrl+↑)", "aria-label": "文字を大きく" });
+  minus.innerHTML = ic("minus"); plus.innerHTML = ic("plus");
+  for (const [b, c] of [[minus, "sizeDown"], [plus, "sizeUp"]]) { b.addEventListener("mousedown", (e) => e.preventDefault()); b.addEventListener("click", () => CMDS[c]()); }
+  return el("span", { class: "fill" }, sizeSelect(), el("span", { class: "unit", text: "pt" }), minus, plus);
+}
 function colorButton() {
-  const wrap = el("label", { class: "tb colorbar", title: "文字色" });
-  wrap.innerHTML = '<span class="glyph">A</span><i></i>';
-  const inp = el("input", { type: "color", value: "#c0392b", style: "position:absolute;opacity:0;width:0;height:0" });
+  const b = el("label", { class: "ib colorbtn", title: "文字色" });
+  b.innerHTML = ic("baseline") + '<span class="swatchline"></span>';
+  const inp = el("input", { type: "color", value: "#ef4444", "aria-label": "文字色" });
   inp.addEventListener("change", () => edit(() => S.ed.setColor(inp.value), true));
-  wrap.append(inp);
-  return wrap;
+  b.append(inp);
+  return b;
 }
 function buildToolbar() {
-  const t = $("#toolbar");
-  t.append(tb("new", "新規作成", ICON.new), tb("open", "開く (Ctrl+O)", ICON.open), tb("save", "保存 (Ctrl+S)", ICON.save), tb("print", "印刷 (Ctrl+P)", ICON.print), el("span", { class: "sep" }),
-    tb("undo", "元に戻す (Ctrl+Z)", ICON.undo), tb("redo", "やり直し", ICON.redo), el("span", { class: "sep" }),
-    tb("cut", "切り取り", ICON.cut), tb("copy", "コピー", ICON.copy), el("span", { class: "sep" }),
-    sizeSelect(), tb("bold", "太字 (Ctrl+B)", "B", true), tb("italic", "斜体 (Ctrl+I)", "<i>I</i>", true), tb("underline", "下線 (Ctrl+U)", "<u>U</u>", true), colorButton(), el("span", { class: "sep" }),
-    tb("alignLeft", "左寄せ (Ctrl+4)", ICON.alignLeft), tb("alignCenter", "センタリング (Ctrl+5)", ICON.alignCenter), tb("alignRight", "右寄せ (Ctrl+6)", ICON.alignRight), el("span", { class: "sep" }),
-    tb("table", "表作成 (Ctrl+¥)", ICON.table), tb("pageBreak", "改ページ (Ctrl+Y)", ICON.pageBreak), el("span", { class: "sep" }),
-    tb("marks", "編集記号", "¶", true), tb("find", "検索", ICON.find));
+  // top bar actions (same place as the other EZPZ editors)
+  const save = el("span", { class: "split" });
+  const main = el("button", { class: "main", title: "上書き保存 (Ctrl+S)" }); main.innerHTML = ic("save") + "<span>保存</span>";
+  const more = el("button", { class: "more", title: "名前を付けて保存 (Ctrl+2)", "aria-label": "名前を付けて保存" }); more.innerHTML = ic("chevron-down");
+  main.addEventListener("click", () => CMDS.save()); more.addEventListener("click", () => CMDS.saveAs());
+  save.append(main, more);
+  const open = el("button", { class: "tbtn hide-narrow", title: "開く (Ctrl+O)" }); open.innerHTML = ic("folder-open") + "<span>開く</span>";
+  open.addEventListener("click", () => CMDS.open());
+  $("#actions").replaceChildren(el("span", { style: "display:inline-flex;align-items:center" }, ibtn("undo", "元に戻す (Ctrl+Z)", "undo-2"), (() => { const b = ibtn("redo", "やり直し (Ctrl+Shift+Z)", "redo-2"); b.classList.add("hide-narrow"); return b; })(), vsep(), open, (() => { const b = ibtn("print", "印刷 (Ctrl+P)", "printer"); b.classList.add("hide-narrow"); return b; })(), save));
+
+  $("#toolbar").replaceChildren(
+    ibtn("new", "新規作成 (Ctrl+N)", "file-plus"), ibtn("open", "開く (Ctrl+O)", "folder-open"), vsep(),
+    ibtn("cut", "切り取り (Ctrl+X)", "scissors"), ibtn("copy", "コピー (Ctrl+C)", "copy"), ibtn("paste", "貼り付け (Ctrl+V)", "clipboard-paste"), vsep(),
+    ibtn("table", "表作成 (Ctrl+¥)", "table"), ibtn("rowBelow", "行を下に挿入", "between-horizontal-start"), ibtn("pageBreak", "改ページ (Ctrl+Y)", "separator-horizontal"), ibtn("date", "日付（和暦）", "calendar"), vsep(),
+    ibtn("find", "検索", "search"), ibtn("marks", "編集記号", "pilcrow"), vsep(),
+    ibtn("jumpPalette", "ジャンプパレット", "panel-left"), ibtn("toolPalette", "ツールパレット", "panel-right"));
+
+  const font = el("span", { class: "fill", title: "フォント（いまは明朝のみ）" }, el("select", { disabled: true, "aria-label": "フォント" }, el("option", { text: "明朝" })));
+  $("#formatbar").replaceChildren(
+    font, sizeControl(), vsep(),
+    ibtn("bold", "太字 (Ctrl+B)", "bold"), ibtn("italic", "斜体 (Ctrl+I)", "italic"), ibtn("underline", "下線 (Ctrl+U)", "underline"), colorButton(), vsep(),
+    ibtn("alignLeft", "左寄せ (Ctrl+4)", "align-left"), ibtn("alignCenter", "センタリング (Ctrl+5)", "align-center"), ibtn("alignRight", "右寄せ (Ctrl+6)", "align-right"));
 }
 
 // ------------------------------------------------------------------ tool palette
 function section(id, title, open, ...body) {
   const d = el("details", { class: "sec", id, open });
-  d.append(el("summary", { text: title }), el("div", { class: "secbody" }, ...body));
+  const sum = el("summary", {}, el("span", { text: title }));
+  sum.insertAdjacentHTML("beforeend", ic("chevron-right", "i chev"));
+  d.append(sum, el("div", { class: "secbody" }, ...body));
   return d;
 }
-function pbtn(cmd, text, title) {
-  const b = el("button", { class: "pbtn", "data-cmd": cmd, title: title || text, text });
+
+function pbtn(cmd, text, title, icon) {
+  const b = el("button", { class: "pbtn", "data-cmd": cmd, title: title || text });
+  b.innerHTML = (icon ? ic(icon) : "") + "<span></span>";
+  b.lastChild.textContent = text;
   b.addEventListener("mousedown", (e) => e.preventDefault());
   b.addEventListener("click", () => CMDS[cmd]());
   return b;
 }
+function actBtn(text, fn, primary = false) {
+  const b = el("button", { class: primary ? "pbtn primary" : "pbtn", text });
+  b.addEventListener("click", fn);
+  return b;
+}
+
+const RAIL = [["sec-char", "文字", "type"], ["sec-para", "段落", "align-left"], ["sec-rule", "罫線", "table-2"], ["sec-find", "検索", "search"], ["sec-count", "文字数", "hash"]];
 function buildPalette() {
   const p = $("#palette");
-  const swatches = el("div", { class: "row" }, el("label", { text: "色" }),
-    ...["", "#000000", "#c0392b", "#1f4fbf", "#1e7d32", "#7b3fa0", "#b36b00"].map((c) => {
-      const b = el("button", { class: "swatch", title: c || "自動", style: c ? `background:${c}` : "background:linear-gradient(135deg,#fff 45%,#c0392b 45%,#c0392b 55%,#fff 55%)" });
+  const swatches = el("div", { class: "row", style: "gap:4px" }, el("label", { text: "色", style: "margin-right:2px" }),
+    ...["", "#0b1020", "#ef4444", "#0155ff", "#00b894", "#7c3aed", "#f59e0b"].map((c) => {
+      const b = el("button", { class: "swatch", title: c || "自動", "aria-label": c || "自動", style: c ? `background:${c}` : "background:linear-gradient(135deg,#fff 44%,#ef4444 44%,#ef4444 56%,#fff 56%)" });
       b.addEventListener("mousedown", (e) => e.preventDefault());
       b.addEventListener("click", () => edit(() => S.ed.setColor(c), true));
       return b;
@@ -584,34 +642,57 @@ function buildPalette() {
   const replIn = el("input", { class: "field", id: "find-r", placeholder: "置換後の文字" });
   findIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doFind(e.shiftKey); } if (e.key === "Escape") focusInput(); });
   replIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doReplace(); } if (e.key === "Escape") focusInput(); });
-  const rows = el("input", { class: "num", type: "number", min: 1, max: 100, value: 3, id: "pal-rows" });
-  const cols = el("input", { class: "num", type: "number", min: 1, max: 20, value: 3, id: "pal-cols" });
+  const rows = el("input", { class: "num", type: "number", min: 1, max: 100, value: 3, id: "pal-rows", "aria-label": "行数" });
+  const cols = el("input", { class: "num", type: "number", min: 1, max: 20, value: 3, id: "pal-cols", "aria-label": "列数" });
+  const hide = el("button", { class: "ib", title: "ツールパレットを隠す", "aria-label": "ツールパレットを隠す" });
+  hide.innerHTML = ic("chevron-right");
+  hide.addEventListener("click", () => toggleView("palette"));
+  const sizeRow = el("div", { class: "row" }, el("label", { text: "サイズ" }), sizeControl());
   p.append(
-    el("div", { class: "paltitle" }, el("span", { text: "ツールパレット" })),
-    section("sec-char", "文字", true,
-      el("div", { class: "row" }, el("label", { text: "サイズ" }), (() => { const s = sizeSelect(); s.id = ""; return s; })(), pbtn("sizeDown", "小", "文字を小さく (Ctrl+↓)"), pbtn("sizeUp", "大", "文字を大きく (Ctrl+↑)")),
-      el("div", { class: "row" }, el("label", { text: "飾り" }), pbtn("bold", "太字"), pbtn("italic", "斜体"), pbtn("underline", "下線")),
+    el("div", { class: "panelhead" }, el("span", { text: "ツールパレット" }), hide),
+    section("sec-char", "文字", true, sizeRow,
+      el("div", { class: "row" }, el("label", { text: "飾り" }), pbtn("bold", "太字", "太字 (Ctrl+B)"), pbtn("italic", "斜体", "斜体 (Ctrl+I)"), pbtn("underline", "下線", "下線 (Ctrl+U)")),
       swatches),
-    section("sec-para", "段落", true,
-      el("div", { class: "row" }, el("label", { text: "揃え" }), pbtn("alignLeft", "左"), pbtn("alignCenter", "中央"), pbtn("alignRight", "右")),
-      el("div", { class: "row" }, el("label", { text: "" }), pbtn("pageBreak", "改ページ"))),
-    section("sec-rule", "罫線", true,
-      el("div", { class: "row" }, el("label", { text: "表作成" }), rows, el("span", { text: "行" }), cols, el("span", { text: "列" }),
-        (() => { const b = el("button", { class: "pbtn primary", text: "作成" }); b.addEventListener("click", () => edit(() => { if (!S.ed.insertTable(+rows.value, +cols.value)) toast("表は本文の段落にだけ作成できます"); }, true)); return b; })()),
-      el("div", { class: "row" }, el("label", { text: "行" }), pbtn("rowAbove", "上に挿入"), pbtn("rowBelow", "下に挿入"), pbtn("rowDelete", "削除")),
-      el("p", { class: "muted", style: "margin:0", text: "表の中では Tab で次のセルへ移動します。" })),
+    section("sec-para", "段落", false,
+      el("div", { class: "row" }, el("label", { text: "揃え" }), pbtn("alignLeft", "左", "左寄せ (Ctrl+4)", "align-left"), pbtn("alignCenter", "中央", "センタリング (Ctrl+5)", "align-center"), pbtn("alignRight", "右", "右寄せ (Ctrl+6)", "align-right")),
+      el("div", { class: "row" }, el("label", { text: "ページ" }), pbtn("pageBreak", "改ページ", "改ページ (Ctrl+Y)", "separator-horizontal"))),
+    section("sec-rule", "罫線", false,
+      el("div", { class: "row" }, el("label", { text: "表作成" }), rows, el("span", { class: "lab", text: "行" }), cols, el("span", { class: "lab", text: "列" })),
+      el("div", { class: "row" }, el("label", { text: "" }), actBtn("表を作成", () => edit(() => { if (!S.ed.insertTable(+rows.value, +cols.value)) toast("表は本文の段落にだけ作成できます"); }, true), true)),
+      el("div", { class: "row" }, el("label", { text: "行" }), pbtn("rowAbove", "上に挿入", "行を上に挿入", "between-horizontal-end"), pbtn("rowBelow", "下に挿入", "行を下に挿入", "between-horizontal-start"), pbtn("rowDelete", "削除", "行を削除", "trash-2")),
+      el("p", { class: "note", text: "表の中では Tab で次のセルへ移動します。" })),
     section("sec-find", "検索・置換", false,
-      findIn, el("div", { class: "row" }, (() => { const b = el("button", { class: "pbtn", text: "前を検索" }); b.addEventListener("click", () => doFind(true)); return b; })(), (() => { const b = el("button", { class: "pbtn primary", text: "次を検索" }); b.addEventListener("click", () => doFind(false)); return b; })()),
-      replIn, el("div", { class: "row" }, (() => { const b = el("button", { class: "pbtn", text: "置換" }); b.addEventListener("click", doReplace); return b; })(), (() => { const b = el("button", { class: "pbtn", text: "すべて置換" }); b.addEventListener("click", doReplaceAll); return b; })())),
-    section("sec-count", "文字数", true,
-      el("div", { class: "kv" }, el("span", { text: "全体" }), el("span", { id: "cnt-all", text: "0" }), el("span", { text: "選択範囲" }), el("span", { id: "cnt-sel", text: "0" }), el("span", { text: "ページ" }), el("span", { id: "cnt-pages", text: "1" }))),
+      findIn, el("div", { class: "row" }, actBtn("前を検索", () => doFind(true)), actBtn("次を検索", () => doFind(false), true)),
+      replIn, el("div", { class: "row" }, actBtn("置換", doReplace), actBtn("すべて置換", doReplaceAll))),
+    section("sec-count", "文字数", false,
+      el("div", { class: "kv" }, el("span", { text: "全体" }), el("b", { id: "cnt-all", text: "0" }), el("span", { text: "選択範囲" }), el("b", { id: "cnt-sel", text: "0" }), el("span", { text: "ページ" }), el("b", { id: "cnt-pages", text: "1" }))),
   );
+  const rail = $("#rail");
+  for (const [id, label, icon] of RAIL) {
+    const b = el("button", { "data-sec": id, title: label });
+    b.innerHTML = ic(icon) + "<span></span>"; b.lastChild.textContent = label;
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", () => { openSection(id, false); focusInput(); });
+    rail.append(b);
+  }
+  for (const d of $$("details.sec", p)) d.addEventListener("toggle", syncRail);
+  syncRail();
 }
-function openSection(id) {
+function syncRail() {
+  // highlight the first open section, like the tool rail of the PDF editor
+  const hidden = $("#main").classList.contains("no-palette");
+  const cur = hidden ? null : $$("#palette details.sec").find((d) => d.open)?.id;
+  for (const b of $$("#rail button")) b.classList.toggle("on", b.dataset.sec === cur);
+}
+
+function openSection(id, focus = true) {
   if ($("#main").classList.contains("no-palette")) toggleView("palette");
-  const d = $("#" + id); d.open = true; d.scrollIntoView({ block: "nearest" });
-  $("select, input, button", d)?.focus();
+  for (const d of $$("#palette details.sec")) d.open = d.id === id;
+  const d = $("#" + id); d.scrollIntoView({ block: "nearest" });
+  syncRail();
+  if (focus) $("select, input, button", d)?.focus();
 }
+
 function openFind(replace) {
   openSection("sec-find");
   const q = $("#find-q");
@@ -635,7 +716,7 @@ function doReplaceAll() {
   const n = S.ed.replaceAll(q, $("#find-r").value); refresh(); toast(`${n} 件置換しました`);
 }
 function switchJump(tab) {
-  $$("#jump .tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $$("#jump .seg button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   $("#pagelist").hidden = tab !== "pages";
   $("#infopane").hidden = tab !== "info";
 }
@@ -928,11 +1009,12 @@ function bindChrome() {
     if (cmd && !["selectAll", "undo", "redo", "bold", "italic", "underline"].includes(cmd)) { e.preventDefault(); CMDS[cmd](); }
   });
   $("#st-mode").addEventListener("click", () => { S.ed.setOverwrite(!S.status.overwrite); refresh({ scroll: false }); focusInput(); });
-  $("#st-marks").addEventListener("click", () => CMDS.marks());
-  $("#st-zin").addEventListener("click", () => CMDS.zoomIn());
-  $("#st-zout").addEventListener("click", () => CMDS.zoomOut());
-  $("#st-zoom").addEventListener("input", (e) => rezoom(e.target.value / 100));
-  $$("#jump .tabs button").forEach((b) => b.addEventListener("click", () => switchJump(b.dataset.tab)));
+  for (const [id, icon, cmd] of [["#st-marks", "pilcrow", "marks"], ["#st-fit", "move-horizontal", "zoomFit"], ["#st-zin", "plus", "zoomIn"], ["#st-zout", "minus", "zoomOut"]]) {
+    const b = $(id); b.innerHTML = ic(icon);
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", () => CMDS[cmd]());
+  }
+  $$("#jump .seg button").forEach((b) => b.addEventListener("click", () => switchJump(b.dataset.tab)));
   $("#st-note").textContent = "用紙: A4 40字×36行";
 }
 
