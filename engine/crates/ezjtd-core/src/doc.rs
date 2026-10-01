@@ -19,7 +19,7 @@ pub enum Align {
     Other,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Run {
     pub text: String,
     #[serde(skip_serializing_if = "CharStyle::is_plain")]
@@ -32,10 +32,13 @@ pub struct Run {
     pub inline: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Paragraph {
     pub align: Align,
     pub runs: Vec<Run>,
+    /// Start this paragraph on a new page (改ページ).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub page_break_before: bool,
 }
 
 impl Paragraph {
@@ -47,7 +50,7 @@ impl Paragraph {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Cell {
     /// Left / right edge in table grid units (see spec).
     pub left: u16,
@@ -55,7 +58,7 @@ pub struct Cell {
     pub paragraphs: Vec<Paragraph>,
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Row {
     pub cells: Vec<Cell>,
     /// Vertical rules of this text line (TLV tag 0x8f), as `(style, distance)`.
@@ -89,7 +92,7 @@ pub fn parse_rules(v: &[u16]) -> Vec<(u16, u16)> {
     out
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Table {
     pub width: u16,
     pub rows: Vec<Row>,
@@ -109,15 +112,14 @@ impl Table {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Block {
     Paragraph(Paragraph),
     Table(Table),
-    PageBreak,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Sheet {
     pub name: String,
     pub path: String,
@@ -142,6 +144,22 @@ pub struct Document {
 }
 
 impl Document {
+    /// An empty document with one sheet and one empty paragraph.
+    pub fn blank() -> Document {
+        Document {
+            format: "new".into(),
+            summary: Summary::default(),
+            fonts: Vec::new(),
+            sheets: vec![Sheet {
+                name: "Sheet 1".into(),
+                path: "/".into(),
+                blocks: vec![Block::Paragraph(Paragraph::default())],
+            }],
+            objects: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
     pub fn plain_text(&self) -> String {
         let mut out = String::new();
         let multi = self.sheets.len() > 1;
@@ -152,6 +170,9 @@ impl Document {
             for b in &s.blocks {
                 match b {
                     Block::Paragraph(p) => {
+                        if p.page_break_before {
+                            out.push('\u{c}');
+                        }
                         out.push_str(&p.plain_text());
                         out.push('\n');
                     }
@@ -172,7 +193,6 @@ impl Document {
                             out.push('\n');
                         }
                     }
-                    Block::PageBreak => out.push('\u{c}'),
                 }
             }
         }
@@ -304,6 +324,7 @@ struct Builder<'a> {
     align: Align,
     table: Option<Table>,
     row: Option<Row>,
+    page_break: bool,
 }
 
 impl<'a> Builder<'a> {
@@ -353,6 +374,7 @@ impl<'a> Builder<'a> {
         if self.table.is_some() {
             self.close_table();
         }
+        p.page_break_before = std::mem::take(&mut self.page_break);
         self.blocks.push(Block::Paragraph(p));
     }
 
@@ -404,6 +426,7 @@ fn build_blocks(tokens: &[Token], map: &StyleMap, _warnings: &mut Vec<String>) -
         align: Align::Left,
         table: None,
         row: None,
+        page_break: false,
     };
     for t in tokens {
         match t {
@@ -500,7 +523,7 @@ fn build_blocks(tokens: &[Token], map: &StyleMap, _warnings: &mut Vec<String>) -
                     b.flush_para(false);
                     if b.row.is_none() {
                         b.close_table();
-                        b.blocks.push(Block::PageBreak);
+                        b.page_break = true;
                     }
                 }
                 0x0000 => {
@@ -514,11 +537,13 @@ fn build_blocks(tokens: &[Token], map: &StyleMap, _warnings: &mut Vec<String>) -
     b.flush_para(false);
     b.close_row();
     b.close_table();
-    // drop trailing empty paragraphs / page breaks
-    while matches!(b.blocks.last(), Some(Block::Paragraph(p)) if p.is_empty())
-        || matches!(b.blocks.last(), Some(Block::PageBreak))
+    // drop trailing empty paragraphs
+    while b.blocks.len() > 1 && matches!(b.blocks.last(), Some(Block::Paragraph(p)) if p.is_empty())
     {
         b.blocks.pop();
+    }
+    if b.blocks.is_empty() {
+        b.blocks.push(Block::Paragraph(Paragraph::default()));
     }
     b.blocks
 }

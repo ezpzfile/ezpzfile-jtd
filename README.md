@@ -7,7 +7,7 @@ in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP.
 > 一太郎の `.jtd` ファイルを、Mac・Linux・スマホ・ブラウザで開くためのオープンソースです。
 > ファイル形式の解析結果（仕様書）も公開しています。ファイルは端末の外に送信されません。
 
-Status: **v0.1 — reading works, layout is approximate.** Not affiliated with JustSystems.
+Status: **v0.2 — reader + editor (developer preview).** Not affiliated with JustSystems.
 
 ## What works
 
@@ -24,10 +24,28 @@ Not yet: horizontal rules, indents and line spacing, page size and margins, pict
 vertical writing, `.jttc` (compressed), editing, saving back to `.jtd`. See the
 [roadmap](docs/PLAN.ko.md).
 
+## Editor
+
+`web/dist/ezjtd-editor.html` is a word processor in one file: double-click it, drop a
+`.jtd` on the window (or start a new document), edit, and save as Word / PDF / HTML /
+text. Like rhwp-studio, the engine lays out and draws the pages itself (canvas); the
+browser only supplies keys, the Japanese input method and the screen.
+
+The screen and keys follow Ichitaro so its users feel at home: menu bar with a 罫線
+menu, toolbar, jump palette (pages, document info) on the left, tool palette on the
+right, ruler in 字 units, status bar with `nページ n行 n字` and 挿入/上書, editing
+marks (改行マーク, □ for full-width spaces), and Ichitaro shortcuts — Ctrl+5/6
+center/right, Ctrl+↑/↓ size, Ctrl+Y page break, Ctrl+¥ table, F7 font, Ctrl+2 save as,
+Esc menu, and a Windows / Ichitaro key-map switch for Ctrl+F. No JustSystems artwork
+is used. Details: [docs/EDITOR.ko.md](docs/EDITOR.ko.md).
+
+Saving back to `.jtd` is not available yet (see the roadmap).
+
 ## Try it
 
-**Browser (no install):** build once, then double-click `web/dist/ezjtd-viewer.html`
-and drop a `.jtd` file on it. It works offline.
+**Browser (no install):** build once, then double-click `web/dist/ezjtd-editor.html`
+(editor) or `web/dist/ezjtd-viewer.html` (viewer) and drop a `.jtd` file on it.
+Both work offline.
 
 ```sh
 ./web/build.sh
@@ -44,7 +62,7 @@ cargo run --release -p ezjtd-cli -- json  sample.jtd      # document model
 cargo run --release -p ezjtd-cli -- info  sample.jtd      # properties, fonts, sheets
 ```
 
-Research commands: `streams`, `dump <path>`, `tokens`, `styles`.
+Also `ezjtd docx <file> <out.docx>`. Research commands: `streams`, `dump <path>`, `tokens`, `styles`.
 
 **As a library (Rust):**
 
@@ -77,10 +95,11 @@ up character by character tells us what each unknown JTD field means.
 
 ```
 engine/                Rust workspace
-  crates/ezjtd-core    the reader (CFB → block store → text/records → styles → model)
+  crates/ezjtd-core    reader (CFB → block store → records → styles → model),
+                       editor (edit, layout on the 字×行 grid), exporters (docx, html, md)
   crates/ezjtd-cli     `ezjtd` command
   crates/ezjtd-wasm    WebAssembly bindings
-web/                   single-file browser viewer
+web/                   browser editor (editor.html + editor/app.js) and viewer, built to single files
 docs/spec/             format specification
 docs/research/         research notes and sample-making guides
 tools/                 corpus download and research scripts

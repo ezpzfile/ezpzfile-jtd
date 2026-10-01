@@ -17,8 +17,11 @@
 
 pub mod cfb;
 pub mod doc;
+pub mod docx;
+pub mod edit;
 pub mod error;
 pub mod export;
+pub mod layout;
 pub mod props;
 pub mod ssmg;
 pub mod style;

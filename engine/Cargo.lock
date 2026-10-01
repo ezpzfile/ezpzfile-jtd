@@ -55,6 +55,7 @@ name = "ezjtd-wasm"
 version = "0.1.0"
 dependencies = [
  "ezjtd-core",
+ "serde",
  "serde_json",
  "wasm-bindgen",
 ]

@@ -26,6 +26,9 @@ pub struct CharStyle {
     /// Bold. id 1 (`1` on, `0xffff` inherit). confirmed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
+    /// Italic. Editor-side only for now (the JTD property id is not known yet).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
     /// Font size in points. id 2, stored in 1/100 mm (`0` = document default). confirmed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_pt: Option<f32>,
@@ -73,12 +76,14 @@ impl CharStyle {
                 format!("#{r:02x}{gg:02x}{b:02x}")
             }),
             baseline: g(19).map(|v| v as u16 as i16).filter(|&v| v != 0),
+            italic: None,
             raw: raw.clone(),
         }
     }
 
     pub fn is_plain(&self) -> bool {
         self.bold.is_none()
+            && self.italic.is_none()
             && self.size_pt.is_none()
             && self.underline.is_none()
             && self.color.is_none()
@@ -89,6 +94,7 @@ impl CharStyle {
     /// Same visible formatting (ignores raw-only differences).
     pub fn same_look(&self, o: &CharStyle) -> bool {
         self.bold == o.bold
+            && self.italic == o.italic
             && self.size_pt == o.size_pt
             && self.font == o.font
             && self.font_latin == o.font_latin

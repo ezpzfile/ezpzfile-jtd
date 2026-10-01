@@ -11,6 +11,7 @@ USAGE:
   ezjtd md       <file>            Markdown
   ezjtd html     <file>            standalone HTML page
   ezjtd json     <file>            document model as JSON
+  ezjtd docx     <file> <out.docx> Word document
   ezjtd info     <file>            summary information and stats
 
 RESEARCH:
@@ -42,6 +43,12 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
         "text" => write!(out, "{}", ezjtd_core::open(bytes)?.plain_text())?,
         "md" => write!(out, "{}", export::to_markdown(&ezjtd_core::open(bytes)?))?,
         "html" => write!(out, "{}", export::to_html_page(&ezjtd_core::open(bytes)?))?,
+        "docx" => {
+            let d = ezjtd_core::open(bytes)?;
+            let out_path = arg.ok_or("missing output path")?;
+            let setup = ezjtd_core::layout::PageSetup::default();
+            std::fs::write(out_path, ezjtd_core::docx::to_docx(&d, None, &setup))?;
+        }
         "json" => writeln!(
             out,
             "{}",
@@ -66,7 +73,6 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
                     match b {
                         ezjtd_core::doc::Block::Paragraph(_) => p += 1,
                         ezjtd_core::doc::Block::Table(_) => t += 1,
-                        _ => {}
                     }
                 }
                 writeln!(

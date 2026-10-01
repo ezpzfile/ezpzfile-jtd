@@ -15,6 +15,9 @@ fn run_css(r: &Run) -> String {
     if s.bold == Some(true) {
         css.push_str("font-weight:bold;");
     }
+    if s.italic == Some(true) {
+        css.push_str("font-style:italic;");
+    }
     if let Some(pt) = s.size_pt {
         css.push_str(&format!("font-size:{pt}pt;"));
     }
@@ -136,9 +139,13 @@ pub fn to_html(doc: &Document) -> String {
         h.push_str("<section class=\"jtd-page\">");
         for b in &s.blocks {
             match b {
-                Block::Paragraph(p) => h.push_str(&para_html(p)),
+                Block::Paragraph(p) => {
+                    if p.page_break_before {
+                        h.push_str("</section><section class=\"jtd-page\">");
+                    }
+                    h.push_str(&para_html(p))
+                }
                 Block::Table(t) => h.push_str(&table_html(t)),
-                Block::PageBreak => h.push_str("</section><section class=\"jtd-page\">"),
             }
         }
         h.push_str("</section>");
@@ -196,6 +203,9 @@ pub fn to_markdown(doc: &Document) -> String {
         for b in &s.blocks {
             match b {
                 Block::Paragraph(p) => {
+                    if p.page_break_before {
+                        out.push_str("---\n\n");
+                    }
                     let t = para_md(p);
                     out.push_str(t.trim_end());
                     out.push_str("\n\n");
@@ -223,7 +233,6 @@ pub fn to_markdown(doc: &Document) -> String {
                     }
                     out.push('\n');
                 }
-                Block::PageBreak => out.push_str("---\n\n"),
             }
         }
     }
