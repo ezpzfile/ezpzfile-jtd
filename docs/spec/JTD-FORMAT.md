@@ -1,4 +1,4 @@
-# Ichitaro document format (`.jtd`) — working specification
+# Ichitaro document format (`.jtd`): working specification
 
 Status: **draft, reverse-engineered**. Last updated 2026-10-01.
 
@@ -26,7 +26,7 @@ reached a different or more specific conclusion, it is marked **new**.
 
 ---
 
-## 1. Container — Compound File Binary
+## 1. Container: Compound File Binary
 
 A `.jtd` is a CFB (OLE2) file, the same container as legacy `.doc` and HWP 5.0.
 Signature `D0 CF 11 E0 A1 B1 1A E1`. **confirmed**
@@ -37,7 +37,7 @@ must follow chains leniently. **observed**
 Streams seen in every corpus file:
 
 ```
-/DocumentText            body text, structure, character styles   (§2–§5)
+/DocumentText            body text, structure, character styles   (§2-§5)
 /Font                    font table                                (§6)
 /\x05SummaryInformation  OLE summary properties                    (§7)
 /\x04JSRV_SummaryInformation, /\x04JSRV_SegmentInformation
@@ -90,7 +90,7 @@ implemented here.*
 
 ---
 
-## 2. `/DocumentText` is a block store — `SsmgV.01` **new**
+## 2. `/DocumentText` is a block store: `SsmgV.01` **new**
 
 Earlier work read `/DocumentText` as a header followed by text. That works
 for small files only. The stream is a small block store; all integers are
@@ -113,13 +113,13 @@ the end of the stream)
 
 Sub-stream 0 has one of two forms:
 
-### 2.1 `TextV.01` — single piece (94 of 95 files)
+### 2.1 `TextV.01`: single piece (94 of 95 files)
 
 ```
 "TextV.01"  u32 unit_count  unit_count × u16 (UTF-16BE text units)  style events (§5)
 ```
 
-### 2.2 `QLSTV.01` — piece list (large documents) **new**
+### 2.2 `QLSTV.01`: piece list (large documents) **new**
 
 ```
 "QLSTV.01"  u32 piece_count  (u32 unit_count, u32 sub_index) × piece_count
@@ -197,7 +197,7 @@ first TLV items of particular records.
 
 | Tag | Count | Meaning | Confidence |
 |---|---|---|---|
-| `0024` | 1 | **alignment**: 0 left, 1 center, 2 right | strong — Word twins: value 1 → centered 3 489 chars vs 153 left; value 2 → right 546 vs 21 center. Remaining chars have no explicit alignment in Word |
+| `0024` | 1 | **alignment**: 0 left, 1 center, 2 right | strong. Word twins: value 1 → centered 3 489 chars vs 153 left; value 2 → right 546 vs 21 center. Remaining chars have no explicit alignment in Word |
 | `008F` | var | **ruled line**: vertical rules and cell grid (§4.3) | observed |
 | `0020` | 4 | line spacing? `(mode, value, mode, value)`, values like 700 = 7.00 mm | candidate |
 | `0026` | 5 | indents? `(flag, left, 0, first, 0)`, values in 1/100 mm | candidate |
@@ -217,13 +217,13 @@ vertical rules of that line, followed by one class `0030` record per cell.
 
 `008F` values: `width, 0, x0`, then items:
 
-- style `< 0x10`: 2 words `(style, distance)` — a gap, **no line drawn**
-- style `≥ 0x10`: 4 words `(style, a, b, distance)` — a vertical rule
+- style `< 0x10`: 2 words `(style, distance)`: a gap, **no line drawn**
+- style `≥ 0x10`: 4 words `(style, a, b, distance)`: a vertical rule
 - the last item may be cut to 2 words
 
 Seen rule styles: `13` (most common), `1B`, `23`, `2B`, `14`, `16`, `24`, `26`.
 `0x08` set in the style appears with dashed rules in the reference renderings
-(candidate). A line whose items are all `< 0x10` has no rules — this is how
+(candidate). A line whose items are all `< 0x10` has no rules. This is how
 ordinary text above a form is stored. **observed**
 
 Cell records `0030`: `0000 left right flags 0000`. Cells are ordered left to
@@ -270,12 +270,12 @@ Property ids, decoded by aligning 22 722 characters with the Word twins:
 
 | Id | Size | Meaning | Confidence |
 |---|---|---|---|
-| 1 | 2 | **bold** — `1` on, `FFFF` inherit | confirmed (62/62) |
+| 1 | 2 | **bold**: `1` on, `FFFF` inherit | confirmed (62/62) |
 | 2 | 2 | **font size in 1/100 mm**, `0` = document default. 282 → 8 pt, 318 → 9 pt, 388 → 11 pt, 423 → 12 pt (1 pt = 35.28) | confirmed |
 | 3 | 2 | font selector (`2`, `10` → Gothic; `1` → Times New Roman). Not a direct `/Font` index | candidate |
 | 4 | 1 | horizontal scale % (50, 100, 200) | candidate |
 | 5 | 1 | vertical scale % | candidate |
-| 6, 7, 9–12, 14 | 1–2 | appear together; co-occur with condensed spacing in Word | unknown |
+| 6, 7, 9-12, 14 | 1-2 | appear together; co-occur with condensed spacing in Word | unknown |
 | 8 | 2 | second font selector (`FFFF` = default) | candidate |
 | 13 | 2 | **underline**: 1 single, 2 thick | confirmed (54/54) |
 | 15 | 4 | **text colour** `0x00BBGGRR`, `FFFFFFFF` = auto | confirmed (also OpenJTD) |
@@ -315,11 +315,11 @@ user before they share a file. **confirmed**
 2. Paragraph indents and line spacing units (TLV `0020`, `0026`)
 3. Page size and margins (`PaperMark`, `PageLayoutStyle`)
 4. Font selector ids 3/8 → face names
-5. Properties 6–12, 14, 16–20
+5. Properties 6-12, 14, 16-20
 6. Vertical writing (縦書き)
 7. `/Header`, `/Footnote`, frames (`/Frame`, `LayoutBoxText`)
 8. `.jttc` (LHA) and pre-Ichitaro 8 files
-9. ~~Writing: what must change in the layout caches~~ — see §9
+9. ~~Writing: what must change in the layout caches~~ (see §9)
 10. Full Ichitaro (not only the viewer) has not been tested with written files
 
 The fastest way to close these is **paired samples**: the same document saved
@@ -357,4 +357,4 @@ written. On the corpus: random editing sessions save 96 % (text), 99 %
 (text + formatting) and 90 % (with tables and page breaks) of the time; the
 rest are refused with a reason (joining lines across a ruled box, a line
 break inside ruby, a table inside a box). Saved files are opened in
-Ichitaro Viewer by `tools/taroview/` — results in `experiments/results.md`.
+Ichitaro Viewer by `tools/taroview/`; results are in `experiments/results.md`.

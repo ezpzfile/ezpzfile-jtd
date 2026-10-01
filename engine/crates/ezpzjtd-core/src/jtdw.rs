@@ -1,4 +1,4 @@
-//! Writing Ichitaro documents — experimental.
+//! Writing Ichitaro documents (experimental).
 //!
 //! What is understood well enough to write:
 //! - the CFB container ([`crate::cfbw`]),
@@ -8,7 +8,7 @@
 //! What is not understood yet: the layout caches (`/LineMark`, `/PageMark`,
 //! `/DocumentTextPositionTables`) that point into the text by position.
 //! The functions here let us produce test files that answer the open
-//! question — does Ichitaro rebuild those caches, or reject the file?
+//! question: does Ichitaro rebuild those caches, or reject the file?
 
 use crate::error::{Error, Result};
 use crate::ssmg;
@@ -142,7 +142,7 @@ impl TextV {
         self.style = out;
     }
 
-    /// First position inside a plain text run (after a 0x001F) — a safe place to edit.
+    /// First position inside a plain text run (after a 0x001F): a safe place to edit.
     pub fn first_text_pos(&self) -> Option<usize> {
         let toks = crate::text::tokenize(&self.units);
         toks.iter().find_map(|t| match t {

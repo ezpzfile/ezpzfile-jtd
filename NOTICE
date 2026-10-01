@@ -7,8 +7,8 @@ It is not affiliated with or endorsed by JustSystems Corporation.
 
 The format was reverse-engineered from public files only. We built on the
 published research of:
-  - OpenJTD  https://github.com/KimEJ/OpenJTD   (Apache-2.0) — RFC 0001–0009
-  - Tika-JTD https://github.com/KHiyowa/Tika-JTD (Apache-2.0) — RFC 0001–0011
+  - OpenJTD  https://github.com/KimEJ/OpenJTD   (Apache-2.0), RFC 0001-0009
+  - Tika-JTD https://github.com/KHiyowa/Tika-JTD (Apache-2.0), RFC 0001-0011
 No code was copied from those projects; findings are cited in docs/spec.
 
 User interface assets

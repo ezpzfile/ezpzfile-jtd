@@ -1,4 +1,4 @@
-//! `SsmgV.01` — the block container inside the `/DocumentText` stream.
+//! `SsmgV.01`: the block container inside the `/DocumentText` stream.
 //!
 //! `/DocumentText` is not one flat buffer. It is a tiny block store
 //! (similar to how an editor keeps a "piece table"):

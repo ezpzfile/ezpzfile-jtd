@@ -7,7 +7,7 @@ we expect. It runs on Linux through Wine, so the check can be automated.
 The viewer is **not** part of this repository. Get the installer from
 JustSystems yourself and read its licence (it allows installing on any
 number of computers; it forbids reverse engineering the program, which we do
-not do — we only open documents with it).
+not do; we only open documents with it).
 
 ## Setup (Ubuntu 24.04)
 

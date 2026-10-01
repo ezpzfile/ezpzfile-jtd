@@ -2,7 +2,7 @@
 //!
 //! Writes a tree of storages and streams. Directory siblings are stored as a
 //! valid red-black tree (balanced, deepest incomplete level red), because
-//! Windows Structured Storage — which Ichitaro uses — can be strict about it.
+//! Windows Structured Storage (which Ichitaro uses) can be strict about it.
 //! Class ids, state bits and timestamps can be carried over from the
 //! original file so a re-saved document looks the same to its owner.
 

@@ -1,10 +1,10 @@
-//! `ezpzjtd` — inspect and convert Ichitaro documents.
+//! `ezpzjtd`: inspect and convert Ichitaro documents.
 
 use ezpzjtd_core::{cfb::Cfb, export, ssmg, style, text};
 use std::io::Write;
 use std::process::ExitCode;
 
-const HELP: &str = "ezpzjtd — Ichitaro (.jtd/.jtt) reader
+const HELP: &str = "ezpzjtd: Ichitaro (.jtd/.jtt) reader
 
 USAGE:
   ezpzjtd text     <file>            plain text

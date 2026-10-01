@@ -298,7 +298,7 @@ function updateStatus() {
   $("#st-marks").classList.toggle("on", S.marks);
   $("#topbar").classList.toggle("modified", st.modified);
   $("#docname").textContent = S.name;
-  document.title = `${st.modified ? "● " : ""}${S.name} — JTD エディタ`;
+  document.title = `${st.modified ? "● " : ""}${S.name} | JTD エディタ`;
   for (const [id, on] of [["undo", st.can_undo], ["redo", st.can_redo]]) {
     $$(`button[data-cmd="${id}"]`).forEach((b) => (b.disabled = !on));
   }
@@ -895,7 +895,7 @@ function save(ask) {
   const canJtd = S.ed.canSaveJtd();
   const jtd = $('input[name="fmt"][value="jtd"]', d);
   jtd.disabled = !canJtd;
-  $("#fmt-jtd-note").textContent = canJtd ? "— 元の文書を書きかえて保存（罫線・書式をそのまま保持）" : "— 新規文書は準備中（一太郎文書を開いた場合に使えます）";
+  $("#fmt-jtd-note").textContent = canJtd ? "元の文書を書きかえて保存（罫線・書式をそのまま保持）" : "新規文書は準備中（一太郎文書を開いた場合に使えます）";
   const def = S.saveFmt || (canJtd ? "jtd" : "docx");
   $$('input[name="fmt"]', d).forEach((r) => (r.checked = r.value === def));
   d.returnValue = "";

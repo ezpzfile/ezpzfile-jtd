@@ -1,89 +1,87 @@
 # EZPZ File JTD
 
-**Open Ichitaro (一太郎) `.jtd` documents anywhere — Mac, Linux, phone, browser.**
-An open-source reader and format specification for JustSystems Ichitaro files,
-in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP.
+**日本語** · [English](README.en.md) · [한국어](README.ko.md)
 
-> 一太郎の `.jtd` ファイルを、Mac・Linux・スマホ・ブラウザで開くためのオープンソースです。
-> ファイル形式の解析結果（仕様書）も公開しています。ファイルは端末の外に送信されません。
+**一太郎の `.jtd` 文書を、Mac・Linux・スマホ・ブラウザで開いて、直して、保存。**
+ジャストシステム 一太郎のファイルを扱うための、オープンソースの読み込みエンジン・エディタ・ファイル形式仕様書です。
+HWP における [rhwp](https://github.com/edwardkim/rhwp) と同じ考え方で作っています。ファイルは端末の外に送信されません。
 
-Status: **v0.3 — reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+状態: **v0.3。`.jtd` に保存し直せる読み込みエンジン + エディタ（開発者向けプレビュー）。**
+株式会社ジャストシステムとは関係ありません。
 
-## What works
+## できること
 
-Tested on 95 public Ichitaro files (Ichitaro 8 – 2018) published by Japanese ministries:
+官公庁などがインターネットで公開している一太郎ファイル 95 件（一太郎 8 から 2018 まで）で確認しています。
 
-- all 95 open; about 2 ms per file
-- body text: 99.9 % of the visible characters match what **Ichitaro Viewer itself** shows
-  (87 of 94 files identical), checked automatically with JustSystems' free viewer
-- edited files **save back to `.jtd`**, and Ichitaro Viewer opens them (see below)
-- paragraphs and alignment, ruled tables (merged cells, column widths, ruled/unruled lines)
-- font size, bold, underline, colour, ruby (furigana), page breaks
-- document properties, including the **original file path** that Ichitaro leaves inside files
-- export: plain text, Markdown, HTML, JSON
+- 95 件すべてが開く。1 ファイルあたり約 2 ms
+- 本文: 見える文字の 99.9 % が **一太郎ビューアそのもの** の表示と一致（94 件中 87 件は完全一致）。
+  ジャストシステムの無料ビューアで自動的に確認
+- 編集したファイルを **`.jtd` に保存し直せ**、一太郎ビューアで開ける（下記参照）
+- 段落と揃え、罫線の表（結合セル、列幅、罫線あり・なしの行）
+- 文字サイズ、太字、下線、文字色、ルビ、改ページ
+- 文書情報。一太郎がファイルの中に残す **元の保存場所（パス）** も表示
+- 書き出し: テキスト、Markdown、HTML、JSON
 
-Not yet: horizontal rules, indents and line spacing, page size and margins, pictures,
-vertical writing, `.jttc` (compressed), saving a *new* document as `.jtd`. See the
-[roadmap](docs/PLAN.ko.md).
+まだできないこと: 横罫線、字下げと行間、用紙サイズと余白、図、縦書き、`.jttc`（圧縮）、*新規* 文書の
+`.jtd` 保存。詳しくは [企画書](docs/PLAN.ja.md)（[English](docs/PLAN.en.md)、[한국어](docs/PLAN.ko.md)）を参照。
 
-## Editor
+## エディタ
 
-`web/dist/ezpzjtd-editor.html` is a word processor in one file: double-click it, drop a
-`.jtd` on the window (or start a new document), edit, and save as **Ichitaro (.jtd)** /
-Word / PDF / HTML / text. Like rhwp-studio, the engine lays out and draws the pages itself (canvas); the
-browser only supplies keys, the Japanese input method and the screen.
+`web/dist/ezpzjtd-editor.html` は 1 ファイルで完結したワープロです。ダブルクリックで開き、`.jtd` を
+ウィンドウにドロップして（または新規文書から）編集し、**一太郎（.jtd）**・Word・PDF・HTML・テキストで
+保存します。rhwp-studio と同じく、ページの配置と描画はエンジンが自分で行います（canvas）。ブラウザが
+受け持つのはキー入力、日本語入力（IME）、画面だけです。
 
-The screen and keys follow Ichitaro so its users feel at home: menu bar with a 罫線
-menu, toolbar, jump palette (pages, document info) on the left, tool palette on the
-right, ruler in 字 units, status bar with `nページ n行 n字` and 挿入/上書, editing
-marks (改行マーク, □ for full-width spaces), and Ichitaro shortcuts — Ctrl+5/6
-center/right, Ctrl+↑/↓ size, Ctrl+Y page break, Ctrl+¥ table, F7 font, Ctrl+2 save as,
-Esc menu, and a Windows / Ichitaro key-map switch for Ctrl+F. No JustSystems artwork
-is used. Details: [docs/EDITOR.ko.md](docs/EDITOR.ko.md).
+画面とキー操作は一太郎に合わせているので、一太郎の利用者はすぐに使えます。罫線メニューのあるメニューバー、
+ツールバー、左のジャンプパレット（ページ、文書情報）、右のツールパレット、字単位のルーラ、`nページ n行 n字`
+と 挿入/上書 のステータスバー、編集記号（改行マーク、全角スペースの □）、一太郎のショートカット
+（Ctrl+5/6 センタリング/右寄せ、Ctrl+↑/↓ 文字サイズ、Ctrl+Y 改ページ、Ctrl+¥ 表、F7 フォント、
+Ctrl+2 名前を付けて保存、Esc メニュー、Ctrl+F の Windows 型 / 一太郎型の切り替え）。
+ジャストシステムの画像やアイコンは使っていません。
+詳しくは [docs/EDITOR.ja.md](docs/EDITOR.ja.md)（[English](docs/EDITOR.en.md)、[한국어](docs/EDITOR.ko.md)）。
 
-### Saving as `.jtd`
+### `.jtd` で保存
 
-A document opened from a `.jtd` saves back to `.jtd` (Ctrl+S). The engine does not
-regenerate the file: it **patches the original**, so everything it does not understand
-yet (ruled-line geometry, hidden fields, macros, pictures) stays byte for byte. Text,
-paragraphs, bold / size / underline / colour, alignment, page breaks and table lines
-are written. Every save is read back and compared with the editor; if anything differs
-the save is refused with a reason and nothing is written (then use Word or PDF).
+`.jtd` から開いた文書は `.jtd` に保存し直せます（Ctrl+S）。エンジンはファイルを作り直さず、
+**元のファイルを書き換えます**。そのため、まだ解読していない部分（罫線の座標、隠しフィールド、マクロ、図）は
+1 バイトも変わりません。書き換えるのは文字、段落、太字・サイズ・下線・色、揃え、改ページ、表の行です。
+保存のたびに結果を読み直してエディタの内容と比べ、違いがあれば理由を表示して保存を取りやめます
+（何も書き込みません。その場合は Word か PDF で保存してください）。
 
-Checked with JustSystems' own Ichitaro Viewer 2022, run automatically through Wine
-([tools/taroview](tools/taroview/README.md)): see [experiments/results.md](experiments/results.md).
-Full Ichitaro (the paid editor) has not been tested yet.
+確認には、ジャストシステムの一太郎ビューア 2022 を Wine で自動実行しています
+（[tools/taroview](tools/taroview/README.md)）。結果は [experiments/results.md](experiments/results.md)（韓国語）。
+製品版の一太郎（有料のエディタ）ではまだ確認していません。
 
 ### PDF
 
-Save as PDF writes the pages exactly as drawn on screen, with an invisible text layer
-so the PDF can still be searched and copied.
+PDF 保存では、ページを画面に描いたとおりに書き出し、見えない文字層を重ねます。そのため PDF でも
+文字の検索・コピーができます。
 
-## Try it
+## 使ってみる
 
-**Browser (no install):** build once, then double-click `web/dist/ezpzjtd-editor.html`
-(editor) or `web/dist/ezpzjtd-viewer.html` (viewer) and drop a `.jtd` file on it.
-Both work offline.
+**ブラウザ（インストール不要）:** 一度ビルドしてから `web/dist/ezpzjtd-editor.html`（エディタ）または
+`web/dist/ezpzjtd-viewer.html`（ビューア）をダブルクリックし、`.jtd` ファイルをドロップします。
+どちらもオフラインで動きます。
 
 ```sh
 ./web/build.sh
 ```
 
-**Command line:**
+**コマンドライン:**
 
 ```sh
 cd engine
-cargo run --release -p ezpzjtd-cli -- text  sample.jtd      # plain text
+cargo run --release -p ezpzjtd-cli -- text  sample.jtd      # テキスト
 cargo run --release -p ezpzjtd-cli -- html  sample.jtd > sample.html
 cargo run --release -p ezpzjtd-cli -- md    sample.jtd      # Markdown
-cargo run --release -p ezpzjtd-cli -- json  sample.jtd      # document model
-cargo run --release -p ezpzjtd-cli -- info  sample.jtd      # properties, fonts, sheets
+cargo run --release -p ezpzjtd-cli -- json  sample.jtd      # 文書モデル
+cargo run --release -p ezpzjtd-cli -- info  sample.jtd      # 文書情報、フォント、シート
 ```
 
-Also `ezpzjtd docx <file> <out.docx>`. Research commands: `streams`, `dump <path>`, `tokens`, `styles`,
-`experiment <file> <dir>` (variants for checking in Ichitaro Viewer).
+ほかに `ezpzjtd docx <file> <out.docx>`。解析用のコマンド: `streams`、`dump <path>`、`tokens`、`styles`、
+`experiment <file> <dir>`（一太郎ビューアで確かめるための変形ファイルを作る）。
 
-**As a library (Rust):**
+**ライブラリとして（Rust）:**
 
 ```rust
 let doc = ezpzjtd_core::open(std::fs::read("sample.jtd")?)?;
@@ -91,7 +89,7 @@ println!("{}", doc.plain_text());
 let html = ezpzjtd_core::export::to_html(&doc);
 ```
 
-**As a library (JavaScript / WebAssembly):** `web/pkg/` after `./web/build.sh`.
+**ライブラリとして（JavaScript / WebAssembly）:** `./web/build.sh` のあとの `web/pkg/`。
 
 ```js
 import init, { JtdDocument } from "./pkg/ezpzjtd_wasm.js";
@@ -100,56 +98,54 @@ const doc = new JtdDocument(new Uint8Array(await file.arrayBuffer()));
 element.innerHTML = doc.html();
 ```
 
-## The format
+## ファイル形式
 
-[`docs/spec/JTD-FORMAT.md`](docs/spec/JTD-FORMAT.md) is the working specification.
-Every statement is tagged *confirmed / strong / observed / candidate / unknown*.
+[`docs/spec/JTD-FORMAT.md`](docs/spec/JTD-FORMAT.md)（英語）が作業中の仕様書です。
+すべての記述に *confirmed / strong / observed / candidate / unknown* の確からしさを付けています。
 
-How we decode it without Ichitaro: Japanese public bodies often publish the same
-form as `.jtd` **and** `.doc`. Word's formatting is known, so lining the two files
-up character by character tells us what each unknown JTD field means.
-`tools/research/` holds those scripts.
+一太郎なしで解読する方法: 官公庁は同じ様式を `.jtd` **と** `.doc` の両方で公開することがよくあります。
+Word 側の書式はわかっているので、2 つのファイルを 1 文字ずつ突き合わせれば、jtd の未知の項目の意味がわかります。
+そのためのスクリプトは `tools/research/` にあります。
 
-Since v0.3 we also use **JustSystems' free Ichitaro Viewer as a referee**: files we
-change are opened in the real viewer (Wine, Japanese locale) and their text is
-copied back out and compared. That is how we found the per-storage stream directory
-(`\x04JSRV_SegmentInformation`) that must match every stream size.
+v0.3 からは **ジャストシステムの無料の一太郎ビューアを審判** にしています。変更したファイルを本物のビューア
+（Wine、日本語環境）で開き、表示された文字をコピーして比べます。この方法で、格納庫ごとのストリーム一覧
+（`\x04JSRV_SegmentInformation`）がすべてのストリームのサイズと一致していなければならないことを見つけました。
 
-## Repository
+## リポジトリの構成
 
 ```
-engine/                Rust workspace
-  crates/ezpzjtd-core    reader (CFB → block store → records → styles → model),
-                       editor (edit, layout on the 字×行 grid), exporters (docx, pdf, html, md),
-                       writer (save.rs: patch the original; cfbw.rs: CFB writer)
-  crates/ezpzjtd-cli     `ezpzjtd` command
-  crates/ezpzjtd-wasm    WebAssembly bindings
-web/                   browser editor (editor.html + editor/app.js) and viewer, built to single files
-docs/spec/             format specification
-docs/research/         research notes and sample-making guides
-tools/                 corpus download and research scripts
-tools/taroview/        open files in the real Ichitaro Viewer (Wine) and read back what it shows
-experiments/           notes and results of the viewer checks
-corpus/manifest.tsv    URLs of public sample files (files themselves are not committed)
+engine/                Rust のワークスペース
+  crates/ezpzjtd-core    読み込み（CFB → ブロック格納庫 → レコード → 書式 → モデル）、
+                       編集（編集、字×行の格子への配置）、書き出し（docx, pdf, html, md）、
+                       保存（save.rs: 元のファイルの書き換え、cfbw.rs: CFB の書き込み）
+  crates/ezpzjtd-cli     `ezpzjtd` コマンド
+  crates/ezpzjtd-wasm    WebAssembly バインディング
+web/                   ブラウザのエディタ（editor.html + editor/app.js）とビューア。1 ファイルにビルド
+docs/spec/             ファイル形式の仕様書（英語）
+docs/PLAN.*.md         企画書、docs/EDITOR.*.md エディタ設計（日本語、English、한국어）
+docs/research/         研究メモ、サンプル作りの手引き
+tools/                 コーパスのダウンロードと解析用スクリプト
+tools/taroview/        本物の一太郎ビューア（Wine）でファイルを開き、表示内容を読み取る
+experiments/           ビューアでの確認の記録と結果
+corpus/manifest.tsv    公開サンプルファイルの URL（ファイル自体はコミットしない）
 ```
 
-## Contributing
+## 協力のお願い
 
-The most valuable contribution is **paired samples**: the same document saved twice
-from Ichitaro with one setting changed. See
-[`docs/research/paired-samples.ko.md`](docs/research/paired-samples.ko.md).
-Please do not commit documents you do not have the right to share.
+いちばん助かるのは **対になるサンプル** です。一太郎で同じ文書を、設定を 1 つだけ変えて 2 回保存したものです。
+作り方は [`docs/research/paired-samples.ja.md`](docs/research/paired-samples.ja.md) を参照してください。
+共有する権利のない文書はコミットしないでください。
 
 ```sh
-python3 tools/fetch_corpus.py --docx   # public corpus → corpus/local/
+python3 tools/fetch_corpus.py --docx   # 公開コーパス → corpus/local/
 cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 ```
 
-## Thanks
+## 謝辞
 
-Built on the published research of [OpenJTD](https://github.com/KimEJ/OpenJTD) and
-[Tika-JTD](https://github.com/KHiyowa/Tika-JTD). See [NOTICE](NOTICE).
+[OpenJTD](https://github.com/KimEJ/OpenJTD) と [Tika-JTD](https://github.com/KHiyowa/Tika-JTD) の
+公開研究をもとにしています。[NOTICE](NOTICE) を参照してください。
 
-## License
+## ライセンス
 
-MIT or Apache-2.0, at your option. "一太郎" / "Ichitaro" are trademarks of JustSystems Corporation.
+MIT または Apache-2.0（選択可）。「一太郎」は株式会社ジャストシステムの商標です。

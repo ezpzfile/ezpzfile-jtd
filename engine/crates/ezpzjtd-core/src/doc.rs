@@ -277,7 +277,7 @@ impl Document {
 pub fn open(bytes: Vec<u8>) -> Result<Document> {
     if bytes.starts_with(b"{\\rtf") {
         return Err(Error::NotJtd(
-            "this file is RTF (rich text) with a .jtd name — open it in any word processor".into(),
+            "this file is RTF (rich text) with a .jtd name; open it in any word processor".into(),
         ));
     }
     let cfb = Cfb::open(bytes)?;
@@ -328,7 +328,7 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
         }
     } else if cfb.find("/JSCompDocument").is_some() {
         return Err(Error::Unsupported(
-            "compressed Ichitaro document (.jttc / -lh5-) — not yet supported".into(),
+            "compressed Ichitaro document (.jttc / -lh5-) is not supported yet".into(),
         ));
     } else {
         return Err(Error::NotJtd("no /DocumentText stream".into()));

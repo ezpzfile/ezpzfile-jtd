@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JTD エディタ — EZPZ File</title>
+<title>JTD エディタ | EZPZ File</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 /* EZPZ File design tokens (same values as ezpzfile.com) */
@@ -173,6 +173,7 @@ dialog .opts label:hover { background: var(--ink-50); }
 dialog .opts label:has(input:disabled) { color: var(--ink-300); background: none; }
 dialog .opts input { accent-color: var(--brand-500); }
 dialog .muted { color: var(--ink-500); font-size: 12px; }
+dialog .muted.sub { display: block; margin-top: 2px; }
 dialog table { border-collapse: collapse; font-size: 13px; }
 dialog td { padding: 5px 14px 5px 0; vertical-align: top; }
 dialog td:first-child { color: var(--ink-500); white-space: nowrap; }
@@ -258,9 +259,9 @@ dialog td:first-child { color: var(--ink-500); white-space: nowrap; }
   <div class="body">
     <label class="flabel">ファイル名 <input class="field" id="save-name"></label>
     <div class="opts">
-      <label><input type="radio" name="fmt" value="jtd"> <span>一太郎文書 (.jtd) <span class="muted" id="fmt-jtd-note"></span></span></label>
-      <label><input type="radio" name="fmt" value="docx" checked> <span>Word 文書 (.docx) <span class="muted">— 表・文字飾り・ルビを保持</span></span></label>
-      <label><input type="radio" name="fmt" value="pdf"> <span>PDF (.pdf) <span class="muted">— 画面と同じ見た目。文字の検索・コピーもできます</span></span></label>
+      <label><input type="radio" name="fmt" value="jtd"> <span>一太郎文書 (.jtd) <span class="muted sub" id="fmt-jtd-note"></span></span></label>
+      <label><input type="radio" name="fmt" value="docx" checked> <span>Word 文書 (.docx) <span class="muted sub">表・文字飾り・ルビを保持</span></span></label>
+      <label><input type="radio" name="fmt" value="pdf"> <span>PDF (.pdf) <span class="muted sub">画面と同じ見た目。文字の検索・コピーもできます</span></span></label>
       <label><input type="radio" name="fmt" value="html"> <span>Web ページ (.html)</span></label>
       <label><input type="radio" name="fmt" value="txt"> <span>テキスト (.txt)</span></label>
       <label><input type="radio" name="fmt" value="md"> <span>Markdown (.md)</span></label>

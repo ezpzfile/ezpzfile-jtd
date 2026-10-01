@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JTD ビューア — EZPZ File</title>
+<title>JTD ビューア | EZPZ File</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   :root { --bg:#e7eaf1; --fg:#0b1020; --muted:#66708c; --line:#e3e7ef; --accent:#0155ff; --panel:#fff; }
@@ -40,7 +40,7 @@
 <div id="err"></div>
 <div id="meta"></div>
 <div id="view"></div>
-<p class="note">EZPZ File JTD v0.1 — 文字・表・文字サイズ・太字・下線・色・ルビに対応。罫線の横線、図、縦書きは未対応です。</p>
+<p class="note">EZPZ File JTD v0.1。文字・表・文字サイズ・太字・下線・色・ルビに対応。罫線の横線、図、縦書きは未対応です。</p>
 
 <script type="module">
 /*__EZPZJTD_GLUE__*/
@@ -73,7 +73,7 @@ async function openFile(file) {
     $("meta").innerHTML = html;
     $("drop").style.display = "none";
     document.querySelectorAll("header button").forEach((b) => (b.disabled = false));
-    document.title = `${file.name} — EZPZ File JTD`;
+    document.title = `${file.name} | EZPZ File JTD`;
   } catch (e) {
     $("err").textContent = `開けませんでした: ${e.message || e}`;
   }
