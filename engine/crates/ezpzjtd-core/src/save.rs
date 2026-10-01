@@ -1345,7 +1345,7 @@ fn save_sheet(
                         let tmpl = template_row(&blocks0, prev, next);
                         let payload = match tmpl {
                             Some(h) => payload_of(&t.units, h),
-                            None => synth_rules(row),
+                            None => synth_rules(row, table_width(blocks1, e.row.0)),
                         };
                         let u = record(0x0010, &payload);
                         let k = u.len();
@@ -1576,18 +1576,38 @@ fn template_row(blocks0: &[Block], prev: Option<&I0>, next: Option<&I0>) -> Opti
     None
 }
 
-/// Line header payload with vertical rules for a new table row.
-fn synth_rules(row: &doc::Row) -> Vec<u16> {
-    let width = row.cells.last().map(|c| c.right + 2).unwrap_or(160);
-    let mut v = vec![width, 0, 0];
+/// Line header payload with vertical rules for a new table row:
+/// `width, 0, x0`, then one `(0x13, 0, 0, cell width)` rule per cell and the
+/// closing rule. Rules are 2 grid units wide; the line adds up to `width`
+/// (spec §4.3), with any space after the last rule as the closing item's distance.
+fn synth_rules(row: &doc::Row, width: u16) -> Vec<u16> {
+    let x0 = row
+        .cells
+        .first()
+        .map(|c| c.left.saturating_sub(2))
+        .unwrap_or(0);
+    let end = row.cells.last().map(|c| c.right + 2).unwrap_or(2);
+    let width = width.max(end);
+    let mut v = vec![width, 0, x0];
     for c in &row.cells {
         v.extend_from_slice(&[0x13, 0, 0, c.right.saturating_sub(c.left)]);
     }
-    v.extend_from_slice(&[0x13, 0]);
+    if end < width {
+        v.extend_from_slice(&[0x13, 0, 0, width - end]);
+    } else {
+        v.extend_from_slice(&[0x13, 0]);
+    }
     let mut p = vec![0, 0x8f, v.len() as u16];
     p.extend(v);
     p.extend_from_slice(&[0xffff, 0]);
     p
+}
+
+fn table_width(blocks: &[Block], bi: usize) -> u16 {
+    match &blocks[bi] {
+        Block::Table(t) => t.width,
+        _ => 0,
+    }
 }
 
 /// Make every top-level paragraph start with the line header state it

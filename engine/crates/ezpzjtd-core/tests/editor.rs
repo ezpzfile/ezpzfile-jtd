@@ -283,3 +283,27 @@ fn random_editing_does_not_panic() {
         let _ = ezpzjtd_core::docx::to_docx(&e.doc, None, &e.setup);
     }
 }
+
+/// A new table follows the geometry of Ichitaro's own files (spec §4.3): every
+/// vertical rule takes 2 grid units, cells sit between rules, and the line
+/// adds up to the table width.
+#[test]
+fn new_table_rules_add_up() {
+    for cols in 1..=7 {
+        let mut e = Editor::blank();
+        assert!(e.insert_table(2, cols));
+        let Block::Table(t) = &e.doc.sheets[0].blocks[0] else {
+            panic!("no table")
+        };
+        for row in &t.rows {
+            let mut x = 0u16;
+            for (c, cell) in row.cells.iter().enumerate() {
+                assert_eq!(cell.left, x + 2, "cols {cols} cell {c}");
+                assert_eq!(row.rules[c].1, cell.right - cell.left);
+                x = cell.right;
+            }
+            assert_eq!(x + 2, t.width, "cols {cols}: line must end at the width");
+            assert_eq!(row.rules.len(), cols + 1);
+        }
+    }
+}

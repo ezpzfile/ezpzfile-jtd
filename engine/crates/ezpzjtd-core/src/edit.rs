@@ -887,21 +887,54 @@ impl Editor {
         matches!(self.flat[self.caret.p], PLoc::Cell(..))
     }
 
+    /// A new ruled row across `width` grid units. Each vertical rule takes 2
+    /// units, so the cells sit between them and the line adds up to `width`
+    /// exactly, the way Ichitaro stores its own tables (spec §4.3).
     fn make_row(&self, cols: usize, width: u16) -> Row {
-        let w = (width as usize / cols.max(1)) as u16;
-        let cells = (0..cols)
-            .map(|c| Cell {
-                left: c as u16 * w + 2,
-                right: (c as u16 + 1) * w - 2,
+        let n = cols.max(1) as u16;
+        let inner = width.saturating_sub(2 * (n + 1));
+        let (d, rem) = (inner / n, inner % n);
+        let mut cells = Vec::new();
+        let mut rules = Vec::new();
+        let mut x = 0u16;
+        for c in 0..n {
+            let w = d + if c == n - 1 { rem } else { 0 };
+            cells.push(Cell {
+                left: x + 2,
+                right: x + 2 + w,
                 paragraphs: vec![Paragraph::default()],
                 src: Default::default(),
-            })
-            .collect();
+            });
+            rules.push((0x13, w));
+            x += 2 + w;
+        }
+        rules.push((0x13, 0));
         Row {
             cells,
-            rules: vec![(0x13, w); cols + 1],
+            rules,
             src: Default::default(),
         }
+    }
+
+    /// Grid width of the document's own tables (the most common one), or the
+    /// width of a line in the editor's layout when it has none.
+    fn grid_width(&self) -> u16 {
+        let mut seen: Vec<(u16, usize)> = Vec::new();
+        for b in self.blocks() {
+            if let Block::Table(t) = b {
+                if t.width == 0 {
+                    continue;
+                }
+                match seen.iter_mut().find(|(w, _)| *w == t.width) {
+                    Some(e) => e.1 += 1,
+                    None => seen.push((t.width, 1)),
+                }
+            }
+        }
+        seen.iter()
+            .max_by_key(|e| e.1)
+            .map(|e| e.0)
+            .unwrap_or((self.setup.chars_per_line * 4) as u16)
     }
 
     /// 罫線 → 表作成: insert a ruled table after the caret's paragraph.
@@ -911,7 +944,7 @@ impl Editor {
         };
         let (rows, cols) = (rows.clamp(1, 100), cols.clamp(1, 20));
         self.snapshot(Kind::None);
-        let width = (self.setup.chars_per_line * 4) as u16;
+        let width = self.grid_width();
         let t = Table {
             width,
             rows: (0..rows).map(|_| self.make_row(cols, width)).collect(),

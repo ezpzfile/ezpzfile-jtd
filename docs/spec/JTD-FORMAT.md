@@ -230,6 +230,17 @@ Cell records `0030`: `0000 left right flags 0000`. Cells are ordered left to
 right with a gap of a few grid units between them for the rule itself. Grid
 width is the `008F` width (e.g. 160 or 168). **observed**
 
+Geometry of a ruled line, as Ichitaro's own files store it: `x0` is the space
+before the first rule (when it is not 0, a cell record `0..x0` holds the text
+there); every rule is **2 grid units** wide; each item's distance is the width
+of the cell after that rule, so a cell runs from `rule + 2` to the next rule;
+and `x0 + Σ(2 + distance) + 2` equals the `008F` width when the last item is
+cut to `(style, 0)` (1,119 of 1,125 such lines in the corpus that have no gap
+items; lines with gap items count differently and are not understood yet).
+A new table must keep these sums and use the document's own grid width (the
+most common `008F` width in the file, 160 for a plain A4 page of 40 字).
+**strong**
+
 Horizontal rules are **not** in these records. Where they live (candidates:
 `LineMark`, `TextLayoutStyle`, the `0020` / `002A` items) is open.
 
