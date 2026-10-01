@@ -330,7 +330,7 @@ twice from Ichitaro with one setting changed. See `docs/research/`.
 ## 9. Writing (saving) **new**
 
 EZPZ File JTD saves by **patching the original file**, not by generating a
-new one (`engine/crates/ezjtd-core/src/save.rs`). What we know is enough to
+new one (`engine/crates/ezpzjtd-core/src/save.rs`). What we know is enough to
 change text, paragraphs, character formatting, alignment, page breaks and
 table lines; what we do not understand is copied byte for byte.
 

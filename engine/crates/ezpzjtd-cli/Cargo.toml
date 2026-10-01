@@ -1,5 +1,5 @@
 [package]
-name = "ezjtd-cli"
+name = "ezpzjtd-cli"
 description = "Command-line tool for inspecting and converting Ichitaro documents"
 version.workspace = true
 edition.workspace = true
@@ -8,9 +8,9 @@ repository.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "ezjtd"
+name = "ezpzjtd"
 path = "src/main.rs"
 
 [dependencies]
-ezjtd-core = { path = "../ezjtd-core" }
+ezpzjtd-core = { path = "../ezpzjtd-core" }
 serde_json.workspace = true

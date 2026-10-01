@@ -8,8 +8,8 @@ import difflib, json, os, subprocess, unicodedata, zipfile
 from xml.etree import ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-EZJTD = os.environ.get("EZJTD", os.path.join(ROOT, "engine", "target", "release", "ezjtd"))
-CORPUS = os.environ.get("EZJTD_CORPUS", os.path.join(ROOT, "corpus", "local"))
+EZPZJTD = os.environ.get("EZPZJTD", os.path.join(ROOT, "engine", "target", "release", "ezpzjtd"))
+CORPUS = os.environ.get("EZPZJTD_CORPUS", os.path.join(ROOT, "corpus", "local"))
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
@@ -27,7 +27,7 @@ def pairs():
 
 
 def jtd_model(path):
-    r = subprocess.run([EZJTD, "json", path], capture_output=True, text=True)
+    r = subprocess.run([EZPZJTD, "json", path], capture_output=True, text=True)
     return json.loads(r.stdout) if r.returncode == 0 else None
 
 

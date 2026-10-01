@@ -1,7 +1,7 @@
 //! Editor behaviour: typing, paragraphs, formatting, tables, undo, layout.
 
-use ezjtd_core::doc::{Align, Block};
-use ezjtd_core::edit::{Editor, Move};
+use ezpzjtd_core::doc::{Align, Block};
+use ezpzjtd_core::edit::{Editor, Move};
 
 fn text(e: &Editor) -> String {
     e.doc.plain_text()
@@ -166,7 +166,7 @@ fn docx_is_a_zip_with_document() {
     let mut e = Editor::blank();
     e.insert_text("こんにちは");
     e.insert_table(1, 2);
-    let bytes = ezjtd_core::docx::to_docx(&e.doc, None, &e.setup);
+    let bytes = ezpzjtd_core::docx::to_docx(&e.doc, None, &e.setup);
     assert_eq!(&bytes[..2], b"PK");
     let s = String::from_utf8_lossy(&bytes);
     assert!(s.contains("word/document.xml"));
@@ -177,7 +177,7 @@ fn docx_is_a_zip_with_document() {
 /// Every corpus file can be laid out and its caret moved to the end.
 #[test]
 fn local_corpus_layout() {
-    let Ok(dir) = std::env::var("EZJTD_CORPUS") else {
+    let Ok(dir) = std::env::var("EZPZJTD_CORPUS") else {
         return;
     };
     for ent in std::fs::read_dir(dir).unwrap() {
@@ -186,7 +186,7 @@ fn local_corpus_layout() {
             continue;
         }
         let bytes = std::fs::read(&p).unwrap();
-        let Ok(doc) = ezjtd_core::open(bytes) else {
+        let Ok(doc) = ezpzjtd_core::open(bytes) else {
             continue;
         };
         let mut e = Editor::new(doc);
@@ -198,7 +198,7 @@ fn local_corpus_layout() {
         }
         e.insert_text("テスト");
         e.undo();
-        let _ = ezjtd_core::docx::to_docx(&e.doc, None, &e.setup);
+        let _ = ezpzjtd_core::docx::to_docx(&e.doc, None, &e.setup);
     }
 }
 
@@ -213,11 +213,11 @@ fn random_editing_does_not_panic() {
         seed % n.max(1)
     };
     let mut docs = vec![Editor::blank()];
-    if let Ok(dir) = std::env::var("EZJTD_CORPUS") {
+    if let Ok(dir) = std::env::var("EZPZJTD_CORPUS") {
         for ent in std::fs::read_dir(dir).unwrap().take(12) {
             let p = ent.unwrap().path();
             if p.extension().map(|x| x == "jtd").unwrap_or(false) {
-                if let Ok(d) = ezjtd_core::open(std::fs::read(&p).unwrap()) {
+                if let Ok(d) = ezpzjtd_core::open(std::fs::read(&p).unwrap()) {
                     docs.push(Editor::new(d));
                 }
             }
@@ -280,6 +280,6 @@ fn random_editing_does_not_panic() {
             let _ = e.selection_rects();
             let _ = e.status();
         }
-        let _ = ezjtd_core::docx::to_docx(&e.doc, None, &e.setup);
+        let _ = ezpzjtd_core::docx::to_docx(&e.doc, None, &e.setup);
     }
 }

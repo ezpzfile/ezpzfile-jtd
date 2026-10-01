@@ -21,8 +21,8 @@
 //! changes, and every `\x04JSRV_SegmentInformation` gets the new stream
 //! sizes. Ichitaro Viewer opens the result; see `experiments/results.md`.
 //!
-//! Research switches: `EZJTD_SAVE_DEBUG=1` prints the diff and the tokens
-//! around the first change; `EZJTD_FORCE_REWRITE=1` rewrites a sheet even
+//! Research switches: `EZPZJTD_SAVE_DEBUG=1` prints the diff and the tokens
+//! around the first change; `EZPZJTD_FORCE_REWRITE=1` rewrites a sheet even
 //! when nothing changed.
 
 use std::collections::{BTreeMap, HashMap};
@@ -1022,7 +1022,7 @@ fn save_sheet(
     let map0 = style_map(t.units.len(), &t.ru, &t.raws);
     let (mut blocks0, groups) = doc::blocks_tracked(&t.units, &map0);
     normalize_blocks(&mut blocks0);
-    if blocks0 == blocks1 && std::env::var_os("EZJTD_FORCE_REWRITE").is_none() {
+    if blocks0 == blocks1 && std::env::var_os("EZPZJTD_FORCE_REWRITE").is_none() {
         return Ok(None);
     }
     let paras0 = flat_paras(&blocks0);
@@ -1437,7 +1437,7 @@ fn save_sheet(
         k += 1;
     }
 
-    if std::env::var_os("EZJTD_SAVE_DEBUG").is_some() {
+    if std::env::var_os("EZPZJTD_SAVE_DEBUG").is_some() {
         let at = ins
             .first()
             .map(|i| i.pos as usize)
@@ -1693,7 +1693,7 @@ fn fix_headers(
         if desired == current {
             continue;
         }
-        if std::env::var_os("EZJTD_SAVE_DEBUG").is_some() {
+        if std::env::var_os("EZPZJTD_SAVE_DEBUG").is_some() {
             eprintln!(
                 "header fix para {k} {:?}: current {:?} desired {:?} own {:?}",
                 b.plain_text().chars().take(10).collect::<String>(),

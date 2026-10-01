@@ -6,8 +6,8 @@
 //!
 //! Nothing leaves the device: all parsing, layout and export run here.
 
-use ezjtd_core::doc::Align;
-use ezjtd_core::edit::{Editor, Move};
+use ezpzjtd_core::doc::Align;
+use ezpzjtd_core::edit::{Editor, Move};
 use wasm_bindgen::prelude::*;
 
 fn js_err(e: impl std::fmt::Display) -> JsError {
@@ -20,7 +20,7 @@ fn json<T: serde::Serialize>(v: &T) -> String {
 
 #[wasm_bindgen]
 pub struct JtdDocument {
-    inner: ezjtd_core::Document,
+    inner: ezpzjtd_core::Document,
 }
 
 #[wasm_bindgen]
@@ -28,20 +28,20 @@ impl JtdDocument {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8]) -> Result<JtdDocument, JsError> {
         Ok(JtdDocument {
-            inner: ezjtd_core::open(bytes.to_vec()).map_err(js_err)?,
+            inner: ezpzjtd_core::open(bytes.to_vec()).map_err(js_err)?,
         })
     }
     pub fn text(&self) -> String {
         self.inner.plain_text()
     }
     pub fn html(&self) -> String {
-        ezjtd_core::export::to_html(&self.inner)
+        ezpzjtd_core::export::to_html(&self.inner)
     }
     pub fn css() -> String {
-        ezjtd_core::export::HTML_CSS.to_string()
+        ezpzjtd_core::export::HTML_CSS.to_string()
     }
     pub fn markdown(&self) -> String {
-        ezjtd_core::export::to_markdown(&self.inner)
+        ezpzjtd_core::export::to_markdown(&self.inner)
     }
     pub fn json(&self) -> String {
         json(&self.inner)
@@ -79,7 +79,7 @@ impl JtdEditor {
 
     /// Open an Ichitaro file.
     pub fn open(bytes: &[u8]) -> Result<JtdEditor, JsError> {
-        let doc = ezjtd_core::open(bytes.to_vec()).map_err(js_err)?;
+        let doc = ezpzjtd_core::open(bytes.to_vec()).map_err(js_err)?;
         Ok(JtdEditor {
             ed: Editor::new(doc),
             original: Some(bytes.to_vec()),
@@ -294,11 +294,11 @@ impl JtdEditor {
     /// Word document of all sheets.
     #[wasm_bindgen(js_name = toDocx)]
     pub fn to_docx(&self) -> Vec<u8> {
-        ezjtd_core::docx::to_docx(&self.ed.doc, None, &self.ed.setup)
+        ezpzjtd_core::docx::to_docx(&self.ed.doc, None, &self.ed.setup)
     }
     #[wasm_bindgen(js_name = toHtml)]
     pub fn to_html(&self) -> String {
-        ezjtd_core::export::to_html_page(&self.ed.doc)
+        ezpzjtd_core::export::to_html_page(&self.ed.doc)
     }
     #[wasm_bindgen(js_name = toText)]
     pub fn to_text(&self) -> String {
@@ -306,7 +306,7 @@ impl JtdEditor {
     }
     #[wasm_bindgen(js_name = toMarkdown)]
     pub fn to_markdown(&self) -> String {
-        ezjtd_core::export::to_markdown(&self.ed.doc)
+        ezpzjtd_core::export::to_markdown(&self.ed.doc)
     }
     /// PDF from the rendered pages: `jpegs` is every page's JPEG one after
     /// another, `lens` their byte lengths, `dims` pixel width/height pairs.
@@ -316,7 +316,7 @@ impl JtdEditor {
         let mut o = 0usize;
         for (k, &n) in lens.iter().enumerate() {
             let n = n as usize;
-            images.push(ezjtd_core::pdf::PageImage {
+            images.push(ezpzjtd_core::pdf::PageImage {
                 jpeg: jpegs[o..(o + n).min(jpegs.len())].to_vec(),
                 px_w: dims.get(2 * k).copied().unwrap_or(1),
                 px_h: dims.get(2 * k + 1).copied().unwrap_or(1),
@@ -324,7 +324,7 @@ impl JtdEditor {
             o += n;
         }
         let pages = self.ed.layout().pages.clone();
-        ezjtd_core::pdf::to_pdf(&pages, &images, title)
+        ezpzjtd_core::pdf::to_pdf(&pages, &images, title)
     }
     /// Saving as .jtd is possible (the document was opened from a .jtd).
     #[wasm_bindgen(js_name = canSaveJtd)]
@@ -340,7 +340,7 @@ impl JtdEditor {
             .original
             .as_ref()
             .ok_or_else(|| JsError::new("新規文書は一太郎形式でまだ保存できません"))?;
-        let s = ezjtd_core::save::save(orig, &self.ed.doc).map_err(js_err)?;
+        let s = ezpzjtd_core::save::save(orig, &self.ed.doc).map_err(js_err)?;
         self.warnings = s.warnings;
         self.original = Some(s.bytes.clone());
         Ok(s.bytes)

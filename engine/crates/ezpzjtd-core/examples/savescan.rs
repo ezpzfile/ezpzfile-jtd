@@ -1,7 +1,7 @@
 //! Try single edits at many places of every corpus file and report the
 //! first failure of each kind with a minimal description.
 //! usage: savescan <dir> [max_paras]
-use ezjtd_core::edit::{plen, Editor, Pos};
+use ezpzjtd_core::edit::{plen, Editor, Pos};
 use std::collections::BTreeMap;
 
 fn main() {
@@ -17,7 +17,7 @@ fn main() {
     let mut total = 0;
     for f in &files {
         let bytes = std::fs::read(f).unwrap();
-        let Ok(doc) = ezjtd_core::open(bytes.clone()) else {
+        let Ok(doc) = ezpzjtd_core::open(bytes.clone()) else {
             continue;
         };
         let base = Editor::new(doc.clone());
@@ -60,7 +60,7 @@ fn main() {
                     _ => e.delete_forward(),
                 }
                 total += 1;
-                if let Err(err) = ezjtd_core::save::save(&bytes, &e.doc) {
+                if let Err(err) = ezpzjtd_core::save::save(&bytes, &e.doc) {
                     let key = format!(
                         "{op}@{} {}",
                         if off == 0 {
@@ -88,15 +88,15 @@ fn main() {
 }
 
 fn plen_of(e: &Editor, p: usize) -> usize {
-    let flat = ezjtd_core::edit::flatten(&e.doc.sheets[0].blocks);
+    let flat = ezpzjtd_core::edit::flatten(&e.doc.sheets[0].blocks);
     let loc = flat[p];
     let para = match loc {
-        ezjtd_core::edit::PLoc::Top(b) => match &e.doc.sheets[0].blocks[b] {
-            ezjtd_core::doc::Block::Paragraph(p) => p.clone(),
+        ezpzjtd_core::edit::PLoc::Top(b) => match &e.doc.sheets[0].blocks[b] {
+            ezpzjtd_core::doc::Block::Paragraph(p) => p.clone(),
             _ => unreachable!(),
         },
-        ezjtd_core::edit::PLoc::Cell(b, r, c, i) => match &e.doc.sheets[0].blocks[b] {
-            ezjtd_core::doc::Block::Table(t) => t.rows[r].cells[c].paragraphs[i].clone(),
+        ezpzjtd_core::edit::PLoc::Cell(b, r, c, i) => match &e.doc.sheets[0].blocks[b] {
+            ezpzjtd_core::doc::Block::Table(t) => t.rows[r].cells[c].paragraphs[i].clone(),
             _ => unreachable!(),
         },
     };

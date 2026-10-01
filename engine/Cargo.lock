@@ -35,26 +35,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "ezjtd-cli"
-version = "0.1.0"
+name = "ezpzjtd-cli"
+version = "0.3.0"
 dependencies = [
- "ezjtd-core",
+ "ezpzjtd-core",
  "serde_json",
 ]
 
 [[package]]
-name = "ezjtd-core"
-version = "0.1.0"
+name = "ezpzjtd-core"
+version = "0.3.0"
 dependencies = [
  "encoding_rs",
  "serde",
 ]
 
 [[package]]
-name = "ezjtd-wasm"
-version = "0.1.0"
+name = "ezpzjtd-wasm"
+version = "0.3.0"
 dependencies = [
- "ezjtd-core",
+ "ezpzjtd-core",
  "serde",
  "serde_json",
  "wasm-bindgen",

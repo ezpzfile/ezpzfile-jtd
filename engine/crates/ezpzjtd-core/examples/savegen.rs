@@ -1,8 +1,8 @@
 //! Make edited copies of corpus files with the save engine, for checking in
 //! Ichitaro Viewer. usage: savegen <corpus_dir> <out_dir> [files] [steps]
 //! Writes <name>-L<level>.jtd for every session that saved.
-use ezjtd_core::doc::Align;
-use ezjtd_core::edit::{Editor, Move};
+use ezpzjtd_core::doc::Align;
+use ezpzjtd_core::edit::{Editor, Move};
 
 struct Rng(u64);
 impl Rng {
@@ -37,7 +37,7 @@ fn main() {
     let (mut ok, mut refused) = (0, 0);
     for (fi, f) in files.iter().take(limit).enumerate() {
         let bytes = std::fs::read(f).unwrap();
-        let Ok(doc) = ezjtd_core::open(bytes.clone()) else {
+        let Ok(doc) = ezpzjtd_core::open(bytes.clone()) else {
             continue;
         };
         for level in 0..3u64 {
@@ -79,7 +79,7 @@ fn main() {
                 }
             }
             let name = f.file_stem().unwrap().to_string_lossy().to_string();
-            match ezjtd_core::save::save(&bytes, &e.doc) {
+            match ezpzjtd_core::save::save(&bytes, &e.doc) {
                 Ok(s) if s.changed > 0 => {
                     std::fs::write(format!("{}/{name}-L{level}.jtd", a[2]), &s.bytes).unwrap();
                     ok += 1;

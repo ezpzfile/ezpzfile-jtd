@@ -1,25 +1,25 @@
-//! `ezjtd` — inspect and convert Ichitaro documents.
+//! `ezpzjtd` — inspect and convert Ichitaro documents.
 
-use ezjtd_core::{cfb::Cfb, export, ssmg, style, text};
+use ezpzjtd_core::{cfb::Cfb, export, ssmg, style, text};
 use std::io::Write;
 use std::process::ExitCode;
 
-const HELP: &str = "ezjtd — Ichitaro (.jtd/.jtt) reader
+const HELP: &str = "ezpzjtd — Ichitaro (.jtd/.jtt) reader
 
 USAGE:
-  ezjtd text     <file>            plain text
-  ezjtd md       <file>            Markdown
-  ezjtd html     <file>            standalone HTML page
-  ezjtd json     <file>            document model as JSON
-  ezjtd docx     <file> <out.docx> Word document
-  ezjtd info     <file>            summary information and stats
+  ezpzjtd text     <file>            plain text
+  ezpzjtd md       <file>            Markdown
+  ezpzjtd html     <file>            standalone HTML page
+  ezpzjtd json     <file>            document model as JSON
+  ezpzjtd docx     <file> <out.docx> Word document
+  ezpzjtd info     <file>            summary information and stats
 
 RESEARCH:
-  ezjtd experiment <file> <outdir> write test variants for checking in Ichitaro
-  ezjtd streams  <file>            list CFB entries
-  ezjtd dump     <file> <path>     raw bytes of one stream (\\x05 escapes allowed)
-  ezjtd tokens   <file>            DocumentText tokens with unit offsets
-  ezjtd styles   <file>            style spans with the text they cover
+  ezpzjtd experiment <file> <outdir> write test variants for checking in Ichitaro
+  ezpzjtd streams  <file>            list CFB entries
+  ezpzjtd dump     <file> <path>     raw bytes of one stream (\\x05 escapes allowed)
+  ezpzjtd tokens   <file>            DocumentText tokens with unit offsets
+  ezpzjtd styles   <file>            style spans with the text they cover
 ";
 
 fn main() -> ExitCode {
@@ -41,23 +41,23 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
     let bytes = std::fs::read(file)?;
     let mut out = std::io::stdout().lock();
     match cmd {
-        "text" => write!(out, "{}", ezjtd_core::open(bytes)?.plain_text())?,
-        "md" => write!(out, "{}", export::to_markdown(&ezjtd_core::open(bytes)?))?,
-        "html" => write!(out, "{}", export::to_html_page(&ezjtd_core::open(bytes)?))?,
+        "text" => write!(out, "{}", ezpzjtd_core::open(bytes)?.plain_text())?,
+        "md" => write!(out, "{}", export::to_markdown(&ezpzjtd_core::open(bytes)?))?,
+        "html" => write!(out, "{}", export::to_html_page(&ezpzjtd_core::open(bytes)?))?,
         "docx" => {
-            let d = ezjtd_core::open(bytes)?;
+            let d = ezpzjtd_core::open(bytes)?;
             let out_path = arg.ok_or("missing output path")?;
-            let setup = ezjtd_core::layout::PageSetup::default();
-            std::fs::write(out_path, ezjtd_core::docx::to_docx(&d, None, &setup))?;
+            let setup = ezpzjtd_core::layout::PageSetup::default();
+            std::fs::write(out_path, ezpzjtd_core::docx::to_docx(&d, None, &setup))?;
         }
         "experiment" => experiment(bytes, arg.ok_or("missing output folder")?)?,
         "json" => writeln!(
             out,
             "{}",
-            serde_json::to_string_pretty(&ezjtd_core::open(bytes)?)?
+            serde_json::to_string_pretty(&ezpzjtd_core::open(bytes)?)?
         )?,
         "info" => {
-            let d = ezjtd_core::open(bytes)?;
+            let d = ezpzjtd_core::open(bytes)?;
             writeln!(out, "{}", serde_json::to_string_pretty(&d.summary)?)?;
             writeln!(out, "format\t{}", d.format)?;
             writeln!(
@@ -73,8 +73,8 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
                 let (mut p, mut t) = (0, 0);
                 for b in &s.blocks {
                     match b {
-                        ezjtd_core::doc::Block::Paragraph(_) => p += 1,
-                        ezjtd_core::doc::Block::Table(_) => t += 1,
+                        ezpzjtd_core::doc::Block::Paragraph(_) => p += 1,
+                        ezpzjtd_core::doc::Block::Table(_) => t += 1,
                     }
                 }
                 writeln!(
@@ -211,8 +211,8 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
 
 /// Write .jtd variants that tell us what Ichitaro accepts.
 fn experiment(bytes: Vec<u8>, outdir: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use ezjtd_core::cfbw::{self, Tree};
-    use ezjtd_core::jtdw::TextV;
+    use ezpzjtd_core::cfbw::{self, Tree};
+    use ezpzjtd_core::jtdw::TextV;
     std::fs::create_dir_all(outdir)?;
     let c = Cfb::open(bytes.clone())?;
     let tree = Tree::from_cfb(&c);
@@ -231,7 +231,7 @@ fn experiment(bytes: Vec<u8>, outdir: &str) -> Result<(), Box<dyn std::error::Er
         cfbw::write(&tree),
         "same streams, rewritten by our CFB writer",
     )?;
-    let same = ezjtd_core::ssmg::substreams(&tv.encode())? == ezjtd_core::ssmg::substreams(&raw)?;
+    let same = ezpzjtd_core::ssmg::substreams(&tv.encode())? == ezpzjtd_core::ssmg::substreams(&raw)?;
     let mut t2 = tree.clone();
     t2.set_stream("/DocumentText", tv.encode());
     put(

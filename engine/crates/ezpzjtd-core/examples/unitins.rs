@@ -1,9 +1,9 @@
 //! Research: insert given units at position p in /DocumentText (caches dropped).
 //! usage: unitins <in.jtd> <out.jtd> <p> <spec>
 //! spec: comma list of hex words, "s:TEXT" for text, "u:a-b" to copy units a..b
-use ezjtd_core::cfb::Cfb;
-use ezjtd_core::cfbw::{self, Tree};
-use ezjtd_core::jtdw::TextV;
+use ezpzjtd_core::cfb::Cfb;
+use ezpzjtd_core::cfbw::{self, Tree};
+use ezpzjtd_core::jtdw::TextV;
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let c = Cfb::open(std::fs::read(&a[1]).unwrap()).unwrap();

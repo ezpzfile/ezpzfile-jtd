@@ -1,8 +1,8 @@
 //! Research: insert a copy of units[a..b] at position p in /DocumentText.
 //! usage: unitpatch <in.jtd> <out.jtd> <a> <b> <p> [dropcaches]
-use ezjtd_core::cfb::Cfb;
-use ezjtd_core::cfbw::{self, Tree};
-use ezjtd_core::jtdw::TextV;
+use ezpzjtd_core::cfb::Cfb;
+use ezpzjtd_core::cfbw::{self, Tree};
+use ezpzjtd_core::jtdw::TextV;
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let bytes = std::fs::read(&a[1]).unwrap();

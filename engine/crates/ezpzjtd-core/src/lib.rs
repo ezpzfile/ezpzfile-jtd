@@ -1,4 +1,4 @@
-//! ezjtd-core — reader for JustSystems Ichitaro documents (`.jtd`, `.jtt`).
+//! ezpzjtd-core — reader for JustSystems Ichitaro documents (`.jtd`, `.jtt`).
 //!
 //! Layers, from the bottom up:
 //! - [`cfb`]: the compound-file container (a small file system inside one file)
@@ -11,7 +11,7 @@
 //!
 //! ```no_run
 //! let bytes = std::fs::read("sample.jtd").unwrap();
-//! let doc = ezjtd_core::open(bytes).unwrap();
+//! let doc = ezpzjtd_core::open(bytes).unwrap();
 //! println!("{}", doc.plain_text());
 //! ```
 

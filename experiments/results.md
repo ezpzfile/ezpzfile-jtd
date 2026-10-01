@@ -27,7 +27,7 @@
 - 구조: `VDA_DOC\0` 머리, u16 LE 필드(14: 첫 항목 위치 0x90, 16: 항목 크기 0x60, 18: 개수),
   항목 = 이름(UTF-16LE 64바이트) + u32 0 + u32 크기 + u32 종류.
 - 고침: `cfbw::Tree::fix_segment_info()` 가 저장할 때 표를 다시 계산.
-- 확인: 코퍼스 95개 전부를 강제로 다시 쓰기(EZJTD_FORCE_REWRITE) → **95/95 열림** (`bisect-cache`).
+- 확인: 코퍼스 95개 전부를 강제로 다시 쓰기(EZPZJTD_FORCE_REWRITE) → **95/95 열림** (`bisect-cache`).
 
 ## 3. 편집 후 저장 — 무작위 편집 세션
 

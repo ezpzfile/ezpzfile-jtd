@@ -1,8 +1,8 @@
 //! Tests on hand-built `/DocumentText` streams, so they run without any
 //! copyrighted sample files.
 
-use ezjtd_core::doc::{blocks_from_document_text, Align, Block};
-use ezjtd_core::{ssmg, style, text};
+use ezpzjtd_core::doc::{blocks_from_document_text, Align, Block};
+use ezpzjtd_core::{ssmg, style, text};
 
 /// Build an `SsmgV.01` container holding one `TextV.01` piece.
 fn ssmg_text(units: &[u16], style: &[u8]) -> Vec<u8> {
@@ -160,14 +160,14 @@ fn table_rows_and_cells() {
 
 #[test]
 fn rtf_is_reported() {
-    let e = ezjtd_core::open(b"{\\rtf1\\ansi hello}".to_vec()).unwrap_err();
+    let e = ezpzjtd_core::open(b"{\\rtf1\\ansi hello}".to_vec()).unwrap_err();
     assert!(e.to_string().contains("RTF"));
 }
 
-/// Runs over a local corpus when `EZJTD_CORPUS` points to a folder of .jtd files.
+/// Runs over a local corpus when `EZPZJTD_CORPUS` points to a folder of .jtd files.
 #[test]
 fn local_corpus_opens() {
-    let Ok(dir) = std::env::var("EZJTD_CORPUS") else {
+    let Ok(dir) = std::env::var("EZPZJTD_CORPUS") else {
         return;
     };
     let mut n = 0;
@@ -178,7 +178,7 @@ fn local_corpus_opens() {
             if bytes.starts_with(b"{\\rtf") {
                 continue;
             }
-            let d = ezjtd_core::open(bytes).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+            let d = ezpzjtd_core::open(bytes).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
             assert!(
                 !d.plain_text().trim().is_empty(),
                 "{} has no text",

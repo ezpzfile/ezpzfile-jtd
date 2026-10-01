@@ -1,12 +1,12 @@
 //! Saving as .jtd: unchanged files stay identical, edited files reopen with
-//! the edited content. Uses the local corpus when `EZJTD_CORPUS` is set.
+//! the edited content. Uses the local corpus when `EZPZJTD_CORPUS` is set.
 
-use ezjtd_core::doc::{Align, Block, Paragraph};
-use ezjtd_core::edit::{normalize_blocks, Editor, Move};
-use ezjtd_core::save;
+use ezpzjtd_core::doc::{Align, Block, Paragraph};
+use ezpzjtd_core::edit::{normalize_blocks, Editor, Move};
+use ezpzjtd_core::save;
 
 fn corpus() -> Vec<(String, Vec<u8>)> {
-    let Ok(dir) = std::env::var("EZJTD_CORPUS") else {
+    let Ok(dir) = std::env::var("EZPZJTD_CORPUS") else {
         return Vec::new();
     };
     let mut v: Vec<_> = std::fs::read_dir(dir)
@@ -66,7 +66,7 @@ fn same_content(a: &[Block], b: &[Block]) -> Result<(), String> {
             return Err(format!("paragraph {k}: page break"));
         }
         // inline runs (ruby / 均等割付) carry the look of their first character
-        let looks = |p: &Paragraph| -> Vec<Option<ezjtd_core::style::CharStyle>> {
+        let looks = |p: &Paragraph| -> Vec<Option<ezpzjtd_core::style::CharStyle>> {
             p.runs
                 .iter()
                 .flat_map(|r| {
@@ -95,7 +95,7 @@ fn same_content(a: &[Block], b: &[Block]) -> Result<(), String> {
 #[test]
 fn unchanged_documents_are_written_back_unchanged() {
     for (name, bytes) in corpus() {
-        let Ok(doc) = ezjtd_core::open(bytes.clone()) else {
+        let Ok(doc) = ezpzjtd_core::open(bytes.clone()) else {
             continue;
         };
         let s = save::save(&bytes, &doc).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -184,7 +184,7 @@ fn edited_documents_reopen_with_the_edits() {
     let mut stats = [[0usize; 3]; 3]; // level → [ok, refused, total]
     let mut refusals: std::collections::BTreeMap<String, usize> = Default::default();
     for (name, bytes) in &docs {
-        let Ok(doc) = ezjtd_core::open(bytes.clone()) else {
+        let Ok(doc) = ezpzjtd_core::open(bytes.clone()) else {
             continue;
         };
         for level in 0..3u64 {
@@ -195,7 +195,7 @@ fn edited_documents_reopen_with_the_edits() {
                 match save::save(bytes, &e.doc) {
                     Ok(s) => {
                         stats[level as usize][0] += 1;
-                        let back = ezjtd_core::open(s.bytes.clone()).unwrap_or_else(|err| {
+                        let back = ezpzjtd_core::open(s.bytes.clone()).unwrap_or_else(|err| {
                             panic!("{name}: saved file does not open: {err}")
                         });
                         assert_eq!(back.sheets.len(), e.doc.sheets.len(), "{name}");
@@ -221,9 +221,9 @@ fn edited_documents_reopen_with_the_edits() {
                                 "FIRST L{level} {key}\n  file {name}\n  ops {}",
                                 log.join(" ")
                             );
-                            std::env::set_var("EZJTD_SAVE_DEBUG", "1");
+                            std::env::set_var("EZPZJTD_SAVE_DEBUG", "1");
                             let _ = save::save(bytes, &e.doc);
-                            std::env::remove_var("EZJTD_SAVE_DEBUG");
+                            std::env::remove_var("EZPZJTD_SAVE_DEBUG");
                         }
                         *n += 1;
                     }

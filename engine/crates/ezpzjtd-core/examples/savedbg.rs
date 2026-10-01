@@ -2,11 +2,11 @@
 //! usage: savedbg <file.jtd> <script> [out.jtd]
 //! script: comma-separated steps: t:TEXT (type), e (enter), b (backspace),
 //! d (delete), m:N (move right N), u:N (move down N), end, home, B (bold sel N right), c (center)
-use ezjtd_core::edit::{Editor, Move};
+use ezpzjtd_core::edit::{Editor, Move};
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let bytes = std::fs::read(&a[1]).unwrap();
-    let doc = ezjtd_core::open(bytes.clone()).unwrap();
+    let doc = ezpzjtd_core::open(bytes.clone()).unwrap();
     let mut e = Editor::new(doc);
     for step in a[2].split(',') {
         let (k, v) = step.split_once(':').unwrap_or((step, ""));
@@ -15,7 +15,7 @@ fn main() {
             "t" => e.insert_text(v),
             "at" => {
                 let (p, o) = v.split_once('/').unwrap();
-                e.caret = ezjtd_core::edit::Pos {
+                e.caret = ezpzjtd_core::edit::Pos {
                     p: p.parse().unwrap(),
                     off: o.parse().unwrap(),
                 };
@@ -31,8 +31,8 @@ fn main() {
             "home" => e.move_caret(Move::DocStart, false),
             "le" => e.move_caret(Move::LineEnd, false),
             "B" => e.toggle_bold(),
-            "c" => e.set_align(ezjtd_core::doc::Align::Center),
-            "r" => e.set_align(ezjtd_core::doc::Align::Right),
+            "c" => e.set_align(ezpzjtd_core::doc::Align::Center),
+            "r" => e.set_align(ezpzjtd_core::doc::Align::Right),
             "pb" => e.page_break(),
             "row" => {
                 e.insert_row(true);
@@ -50,7 +50,7 @@ fn main() {
         }
     }
     println!("caret {:?}", e.caret);
-    match ezjtd_core::save::save(&bytes, &e.doc) {
+    match ezpzjtd_core::save::save(&bytes, &e.doc) {
         Ok(s) => {
             println!("ok changed={} warnings={:?}", s.changed, s.warnings);
             if let Some(o) = a.get(3) {

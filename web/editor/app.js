@@ -23,8 +23,8 @@ const el = (tag, attrs = {}, ...kids) => {
   return e;
 };
 const store = {
-  get(k, d) { try { const v = localStorage.getItem("ezjtd." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem("ezjtd." + k, JSON.stringify(v)); } catch {} },
+  get(k, d) { try { const v = localStorage.getItem("ezpzjtd." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("ezpzjtd." + k, JSON.stringify(v)); } catch {} },
 };
 
 // ------------------------------------------------------------------ state

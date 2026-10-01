@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Compare our text with the text Ichitaro Viewer shows (from batch.py).
 
-usage: compare.py CORPUS_DIR CACHE_DIR [EZJTD_BIN]
+usage: compare.py CORPUS_DIR CACHE_DIR [EZPZJTD_BIN]
 Both texts are reduced to their visible characters (no spaces, no box
 drawing) and aligned. Prints per-file similarity and the worst differences.
 """
 import difflib, os, subprocess, sys, unicodedata
 
 src, cache = sys.argv[1], sys.argv[2]
-exe = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(__file__), "../../engine/target/release/ezjtd")
+exe = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(__file__), "../../engine/target/release/ezpzjtd")
 
 
 def norm(s):
