@@ -335,13 +335,18 @@ Ichitaro shows closed)
 
 A class `0010` record that comes **after text and before the `000A`** does
 not start a new paragraph. 「（２）」+ three empty headers +
-「教育プロジェクトの内容…」 is one line in Ichitaro Viewer. The header's state
-applies from that point on and is inherited by the following paragraphs.
-**viewer** (our reader now agrees with Ichitaro Viewer on 99.9 % of the
-visible characters of 94 public files, 87 of them exactly)
+「教育プロジェクトの内容…」 is one line in Ichitaro Viewer. Its state is for
+the next line. **viewer** (our reader agrees with Ichitaro Viewer on 99.9 % of
+the visible characters of 94 public files, 87 of them exactly)
 
-Header state is persistent like character styles: a paragraph without its
-own header uses the last header seen. **strong**
+A line header formats **its own line only**. A line with no header (and no
+header inside the line before it) has the defaults: left aligned, no indent,
+normal line feed. Formatting the middle one of three paragraphs in the latest
+一太郎 writes one header, on the middle paragraph; a right-aligned date
+followed by a plain 「各位」 line shows 「各位」 left aligned. A ruled line's
+header belongs to its row. **ichitaro** (Earlier versions of this document
+said the state carried over to the following paragraphs, like character
+styles. That was wrong.)
 
 ---
 

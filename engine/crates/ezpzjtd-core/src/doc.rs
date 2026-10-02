@@ -763,6 +763,13 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// No line header in effect: the defaults (left, no indent, normal feed).
+    fn reset_line_state(&mut self) {
+        self.align = Align::Left;
+        (self.indent, self.feed) = (None, None);
+        self.t.eff = None;
+    }
+
     fn flush_para(&mut self, force: bool) {
         if !force && self.para.runs.is_empty() {
             return;
@@ -1105,7 +1112,15 @@ fn build_blocks(
                     // 000A always ends a paragraph, empty lines in cells included
                     // (a row with no cell yet has nowhere to put one)
                     let has_cell = b.row.as_ref().map(|r| !r.cells.is_empty()).unwrap_or(true);
+                    // a line header inside this paragraph is meant for the next one
+                    let next_has_header = b.para_align.is_some() || b.para_fmt.is_some();
                     b.flush_para(has_cell);
+                    if b.row.is_none() && !next_has_header {
+                        // a line header formats its own paragraph only: one with
+                        // no header has the defaults [一太郎 2026: formatting
+                        // the middle of three paragraphs writes one header]
+                        b.reset_line_state();
+                    }
                     // an empty cell paragraph is dropped; its region ends here too
                     b.t.region_start = end;
                     b.t.heads.clear();
@@ -1117,6 +1132,8 @@ fn build_blocks(
                     b.close_row();
                     b.t.region_start = end;
                     b.t.heads.clear();
+                    // the row's line header is the row's own
+                    b.reset_line_state();
                 }
                 text::PAGE_BREAK => {
                     b.flush_para(false);

@@ -1739,21 +1739,7 @@ fn fix_headers(
             p1.len()
         )));
     }
-    // every line header in the text, in order
-    let headers: Vec<(u32, u32)> = {
-        let toks = text::tokenize(units);
-        let mut v = Vec::new();
-        for (i, tk) in toks.iter().enumerate() {
-            if let text::Token::Record {
-                start, class: 0x10, ..
-            } = tk
-            {
-                let end = toks.get(i + 1).map(tok_start).unwrap_or(units.len());
-                v.push((*start as u32, (end - start) as u32));
-            }
-        }
-        v
-    };
+    let lines = line_headers(units);
     // record start → replacement payload; position → inserted payload
     let mut replace: BTreeMap<u32, (u32, Vec<u16>)> = BTreeMap::new();
     let mut insert: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
@@ -1792,12 +1778,14 @@ fn fix_headers(
             .cloned()
             .flatten()
             .unwrap_or_else(default_header_payload);
-        // the state in effect where this paragraph's content starts
+        // the state in effect where this paragraph's content starts: its
+        // line's own header, or one inside the line before, else the defaults
         let cs = s.chars.first().map(|c| c.before).unwrap_or(s.end);
-        let hi = headers.partition_point(|h| h.0 < cs);
-        let last_h = hi.checked_sub(1).map(|i| headers[i]);
+        let li = lines.partition_point(|l| l.1 < cs).min(lines.len().saturating_sub(1));
+        let line = lines.get(li).copied();
+        let last_h = line.and_then(|l| l.2);
         let last_ins = insert
-            .range(..=cs)
+            .range(line.map(|l| l.0).unwrap_or(0)..=cs)
             .next_back()
             .map(|(p, pl)| (*p, pl.clone()));
         let current = match (last_h, last_ins) {
@@ -1877,6 +1865,45 @@ fn fix_headers(
         u += 1;
     }
     Ok((ou, or))
+}
+
+/// Lines of the text outside ruled rows as (start, end, header in effect),
+/// `end` being the unit that ends the line (000A or 000E). The same rule as
+/// the reader: a line header formats its own line, one that comes after text
+/// in a line formats the next line, and a line with neither has the defaults.
+fn line_headers(units: &[u16]) -> Vec<(u32, u32, Option<(u32, u32)>)> {
+    let toks = text::tokenize(units);
+    let mut out = Vec::new();
+    let (mut line_start, mut has_text) = (0u32, false);
+    let (mut own, mut carry_in, mut carry_out) = (None, None, None);
+    for (i, tk) in toks.iter().enumerate() {
+        match tk {
+            text::Token::Record { start, class: 0x10, payload } => {
+                let end = toks.get(i + 1).map(tok_start).unwrap_or(units.len());
+                let h = (*start as u32, (end - start) as u32);
+                if has_rules(payload) {
+                    // a ruled row: its header is the row's own
+                    own = None;
+                } else if has_text {
+                    carry_out = Some(h);
+                } else {
+                    own = Some(h);
+                }
+            }
+            text::Token::Text { .. } | text::Token::Inline { .. } => has_text = true,
+            text::Token::Control { start, code } if *code == text::PARA_END || *code == text::ROW_END => {
+                out.push((line_start, *start as u32, own.or(carry_in)));
+                carry_in = if *code == text::PARA_END { carry_out.take() } else { None };
+                carry_out = None;
+                own = None;
+                has_text = false;
+                line_start = *start as u32 + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push((line_start, units.len() as u32, own.or(carry_in)));
+    out
 }
 
 fn tok_start(t: &text::Token) -> usize {

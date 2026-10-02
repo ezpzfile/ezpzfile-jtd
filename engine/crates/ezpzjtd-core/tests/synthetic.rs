@@ -127,6 +127,47 @@ fn paragraph_alignment_and_ruby() {
     assert_eq!(paras[1].align, Align::Right);
 }
 
+/// A line header formats its own line only; a line with no header has the
+/// defaults. One inside a line (after its text) formats the next line.
+/// [一太郎 2026: formatting the middle of three paragraphs writes one header,
+/// and the third paragraph shows left aligned and not indented]
+#[test]
+fn line_header_formats_its_own_line() {
+    use ezpzjtd_core::doc::Indent;
+    let mut u = para_rec(&[(0x24, &[2]), (0x26, &[0, 4, 0, 4, 0])]);
+    u.extend(s("日付"));
+    u.push(0x0a);
+    u.extend(s("各位"));
+    u.push(0x0a);
+    // a header after the text of a line: for the next line
+    u.extend(s("前"));
+    u.extend(para_rec(&[(0x24, &[1])]));
+    u.push(0x0a);
+    u.extend(s("中央"));
+    u.push(0x0a);
+    u.extend(s("後"));
+    u.push(0x0a);
+    let raw = ssmg_text(&u, &[0xff]);
+    let blocks = blocks_from_document_text(&raw, &mut Vec::new()).unwrap();
+    let paras: Vec<_> = blocks
+        .iter()
+        .filter_map(|b| if let Block::Paragraph(p) = b { Some(p) } else { None })
+        .collect();
+    let got: Vec<_> = paras.iter().map(|p| (p.plain_text(), p.align)).collect();
+    assert_eq!(
+        got,
+        [
+            ("日付".to_string(), Align::Right),
+            ("各位".to_string(), Align::Left),
+            ("前".to_string(), Align::Left),
+            ("中央".to_string(), Align::Center),
+            ("後".to_string(), Align::Left),
+        ]
+    );
+    assert!(matches!(paras[0].indent, Some(Indent { .. })));
+    assert_eq!(paras[1].indent, None);
+}
+
 #[test]
 fn table_rows_and_cells() {
     // one ruled row with two cells
