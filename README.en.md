@@ -46,7 +46,13 @@ right, ruler in 字 units, status bar with `nページ n行 n字` and 挿入/上
 marks (改行マーク, □ for full-width spaces), and Ichitaro shortcuts (Ctrl+5/6
 center/right, Ctrl+↑/↓ size, Ctrl+Y page break, Ctrl+¥ table, F7 font, Ctrl+2 save as,
 Esc menu, and a Windows / Ichitaro key-map switch for Ctrl+F). No JustSystems artwork
-is used. Details: [docs/EDITOR.en.md](docs/EDITOR.en.md)
+is used.
+The screen comes in Japanese and English: `web/dist/ezpzjtd-editor.en.html` is the
+English one, and `?lang=en` / `?lang=ja` switches either file. To use it right away in a
+browser: [ezpzfile.com/jtd-editor](https://ezpzfile.com/jtd-editor). To put it on a site,
+use `web/dist/ezpzjtd-editor.embed.html` with the URL of the `.wasm` from `web/pkg/`
+filled in. Opened in a frame of a page on the same site, it talks to that page as
+`web/editor/host.js` describes. Details: [docs/EDITOR.en.md](docs/EDITOR.en.md)
 ([日本語](docs/EDITOR.ja.md), [한국어](docs/EDITOR.ko.md)).
 
 ### Saving as `.jtd`

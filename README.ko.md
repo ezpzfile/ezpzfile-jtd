@@ -44,6 +44,10 @@ rhwp-studio처럼 쪽 배치와 그리기는 엔진이 직접 합니다(canvas).
 상태표시줄, 편집 기호(改行マーク, 전각 공백은 □), 一太郎 단축키(Ctrl+5/6 가운데/오른쪽, Ctrl+↑/↓ 글자 크기,
 Ctrl+Y 쪽 나눔, Ctrl+¥ 표, F7 글꼴, Ctrl+2 다른 이름으로 저장, Esc 메뉴, Ctrl+F의 Windows형 / 一太郎형 전환).
 저스트시스템의 그림이나 아이콘은 쓰지 않습니다.
+화면 글은 일본어와 영어가 있습니다. 영어판은 `web/dist/ezpzjtd-editor.en.html`이고, 어느 파일이든
+`?lang=en` / `?lang=ja`로 바꿀 수 있습니다. 브라우저에서 바로 쓰려면 [ezpzfile.com/jtd-editor](https://ezpzfile.com/jtd-editor).
+다른 사이트에 올릴 때는 `web/dist/ezpzjtd-editor.embed.html`에 `web/pkg/`의 `.wasm` 주소를 넣어 씁니다.
+같은 사이트의 틀(iframe) 안에서 열리면 `web/editor/host.js`에 적힌 약속대로 그 쪽과 말을 주고받습니다.
 자세한 내용은 [docs/EDITOR.ko.md](docs/EDITOR.ko.md)([日本語](docs/EDITOR.ja.md), [English](docs/EDITOR.en.md)).
 
 ### `.jtd`로 저장

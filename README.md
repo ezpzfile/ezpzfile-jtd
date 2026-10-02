@@ -46,6 +46,10 @@ HWP における [rhwp](https://github.com/edwardkim/rhwp) と同じ考え方で
 （Ctrl+5/6 センタリング/右寄せ、Ctrl+↑/↓ 文字サイズ、Ctrl+Y 改ページ、Ctrl+¥ 表、F7 フォント、
 Ctrl+2 名前を付けて保存、Esc メニュー、Ctrl+F の Windows 型 / 一太郎型の切り替え）。
 ジャストシステムの画像やアイコンは使っていません。
+画面の言葉は日本語と英語があります。英語版は `web/dist/ezpzjtd-editor.en.html` で、どちらのファイルも
+`?lang=en` / `?lang=ja` で切り替えられます。ブラウザですぐ使うなら [ezpzfile.com/ja/jtd-editor](https://ezpzfile.com/ja/jtd-editor)。
+ほかのサイトに載せるときは `web/dist/ezpzjtd-editor.embed.html` に `web/pkg/` の `.wasm` の URL を入れて使います。
+同じサイトのページの枠（iframe）の中で開くと、`web/editor/host.js` の決まりでそのページとやり取りします。
 詳しくは [docs/EDITOR.ja.md](docs/EDITOR.ja.md)（[English](docs/EDITOR.en.md)、[한국어](docs/EDITOR.ko.md)）。
 
 ### `.jtd` で保存
