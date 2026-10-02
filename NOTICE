@@ -19,4 +19,5 @@ User interface assets
       with or without fee is hereby granted, provided that the above copyright notice
       and this permission notice appear in all copies.
   - UI font: Pretendard (SIL Open Font License 1.1), loaded from jsDelivr when online.
-  - EZPZ File logo: (c) EZPZ File. Not covered by the MIT/Apache licences of the code.
+  - EZPZ File logos (docs/images/ezpz_*.svg and the editor's logo): (c) EZPZ File.
+    Not covered by the code licence (LICENSE).

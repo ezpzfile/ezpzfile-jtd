@@ -3,7 +3,7 @@ name = "ezpzjtd-core"
 description = "Reader for JustSystems Ichitaro (.jtd/.jtt/.jttc) documents"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 authors.workspace = true
 

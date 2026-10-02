@@ -469,7 +469,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo("文字数", [["文字数（空白を除く）", S.status.chars.toLocaleString()], ["ページ数", S.status.pages], ["選択範囲", $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo("JTD エディタについて", [["バージョン", "0.3 (開発版)"], ["内容", "一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。"], ["ライセンス", "MIT / Apache-2.0"], ["注意", "一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。"]]),
+  about: () => showInfo("JTD エディタについて", [["バージョン", "0.3 (開発版)"], ["内容", "一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。"], ["ライセンス", "EZPZ File License（MIT + 出典表示）"], ["注意", "一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。"]]),
 };
 
 function edit(fn, record = true, name = null) {

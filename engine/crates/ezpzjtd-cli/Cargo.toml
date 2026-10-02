@@ -3,7 +3,7 @@ name = "ezpzjtd-cli"
 description = "Command-line tool for inspecting and converting Ichitaro documents"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 authors.workspace = true
 
