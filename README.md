@@ -160,10 +160,7 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 
 ## ライセンス
 
-[EZPZ File License](LICENSE)（MIT ライセンスに出典表示の条件を一つ加えたもの）。使用・改変・再配布・商用利用は自由です。
-条件は一つだけです。このソフトウェア（またはこれを元にしたもの）を使う製品・サイト・サービスでは、利用者が見られる場所の
-どこか 1 か所（「このアプリについて」、クレジット、フッター、ヘルプなど）に、EZPZ File とサイトのアドレスを表示してください。
-
-    Powered by EZPZ File (https://ezpzfile.com)
-
-コミット 3557b17 までに公開した版は、MIT または Apache-2.0 のままです。「一太郎」は株式会社ジャストシステムの商標です。
+MIT ライセンス（[LICENSE](LICENSE)）。使用・改変・再配布・商用利用は自由です。コピーや改変版には、
+著作権表示「Copyright (c) 2026 EZPZ File (https://ezpzfile.com)」とライセンス文をそのまま残してください。
+サービスや製品で使うときに、どこかに「Powered by EZPZ File」と表示していただけるとうれしいです（任意）。
+「一太郎」は株式会社ジャストシステムの商標です。
