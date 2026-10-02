@@ -29,6 +29,7 @@ python3 make_samples.py samples/rules.py out/   # boxes and lines
 python3 make_samples.py samples/types.py out/   # line types, 行間 / 通常
 python3 make_samples.py samples/page.py out/    # paper, margins, 字数, 行数 (文書スタイル)
 python3 make_samples.py samples/para.py out/    # indents, line feed (改行幅)
+python3 make_samples.py samples/demo.py out/    # the notice in the README screenshot
 ```
 
 `page.py` starts with `p00-probe`, which writes what the macro functions

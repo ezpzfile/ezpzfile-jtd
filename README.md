@@ -1,6 +1,8 @@
-# EZPZ File JTD
-
-**日本語** · [English](README.en.md) · [한국어](README.ko.md)
+<p align="center">
+  <img src="docs/images/ezpz_jtd.svg" alt="EZPZ File JTD" width="96">
+</p>
+<h1 align="center">EZPZ File JTD</h1>
+<p align="center"><b>日本語</b> · <a href="README.en.md">English</a> · <a href="README.ko.md">한국어</a></p>
 
 **一太郎の `.jtd` 文書を、Mac・Linux・スマホ・ブラウザで開いて、直して、保存。**
 ジャストシステム 一太郎のファイルを扱うための、オープンソースの読み込みエンジン・エディタ・ファイル形式仕様書です。
@@ -8,6 +10,10 @@ HWP における [rhwp](https://github.com/edwardkim/rhwp) と同じ考え方で
 
 状態: **v0.3。`.jtd` に保存し直せる読み込みエンジン + エディタ（開発者向けプレビュー）。**
 株式会社ジャストシステムとは関係ありません。
+
+![JTD エディタの画面](docs/images/editor.png)
+
+<sub>一太郎 最新版で作った案内文を、ブラウザのエディタで開いたところ。</sub>
 
 ## できること
 
