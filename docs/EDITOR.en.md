@@ -32,7 +32,7 @@ No trademarks, logos, icons or signature colours are used. Only the layout and t
 
 - **The document model is the source of truth.** The screen is just a drawing of the model, so
   none of the instability of `contenteditable` applies.
-- Layout uses a **character grid (字×行)** like Ichitaro. Default A4, 40 字 × 36 行, 10.5 pt.
+- Layout uses a **character grid (字×行)** like Ichitaro. A document opened from a file keeps its own page setup (paper, margins, 字数, 行数, character size); a new one is A4, margins 30 mm, 40 字 × 40 行, 10.5 pt, as in the latest 一太郎.
   A full-width character takes one cell, a half-width one half a cell.
 - Japanese input: when the hidden textarea receives text still being converted (preedit), the
   engine lays it out at the cursor with an underline. The textarea is moved to the cursor so the

@@ -3,7 +3,7 @@
 //! The document model is the single source of truth. The UI sends commands
 //! and draws whatever [`crate::layout`] produces; it never edits text itself.
 
-use crate::doc::{Align, Block, Cell, Document, Paragraph, Row, Run, Table};
+use crate::doc::{Align, Block, Cell, Document, Paragraph, Row, Rule, Run, Table};
 use crate::layout::{self, Layout, PageSetup, Preedit};
 use crate::style::CharStyle;
 use serde::Serialize;
@@ -240,6 +240,10 @@ pub fn normalize_blocks(blocks: &mut Vec<Block>) {
     }
 }
 
+/// The largest distance or length one ruled-line item gets from the editor
+/// (Ichitaro's own files stay under 0x100).
+const MAX_ITEM: u16 = 0xf0;
+
 // ---------------------------------------------------------------- editor
 
 #[derive(Clone)]
@@ -346,6 +350,7 @@ impl Editor {
             doc = Document::blank();
         }
         let flat = flatten(&doc.sheets[0].blocks);
+        let setup = doc.page.clone().unwrap_or_default();
         Editor {
             doc,
             sheet: 0,
@@ -360,7 +365,7 @@ impl Editor {
             pending: None,
             overwrite: false,
             preedit: String::new(),
-            setup: PageSetup::default(),
+            setup,
             show_marks: true,
             layout: None,
             modified: false,
@@ -889,11 +894,17 @@ impl Editor {
 
     /// A new ruled row across `width` grid units. Each vertical rule takes 2
     /// units, so the cells sit between them and the line adds up to `width`
-    /// exactly, the way Ichitaro stores its own tables (spec §4.3).
+    /// exactly, the way Ichitaro stores its own tables (spec §4.3). Every
+    /// cell has a line under it. Cells are at most `MAX_ITEM` units wide (no
+    /// wider item is seen in Ichitaro's files); a table that would need wider
+    /// cells ends before the right margin.
     fn make_row(&self, cols: usize, width: u16) -> Row {
         let n = cols.max(1) as u16;
         let inner = width.saturating_sub(2 * (n + 1));
-        let (d, rem) = (inner / n, inner % n);
+        let (mut d, mut rem) = (inner / n, inner % n);
+        if d >= MAX_ITEM {
+            (d, rem) = (MAX_ITEM, 0);
+        }
         let mut cells = Vec::new();
         let mut rules = Vec::new();
         let mut x = 0u16;
@@ -905,13 +916,69 @@ impl Editor {
                 paragraphs: vec![Paragraph::default()],
                 src: Default::default(),
             });
-            rules.push((0x13, w));
+            rules.push(Rule {
+                style: 0x13 | Rule::BELOW,
+                a: 0,
+                b: Rule::BELOW,
+                dist: w,
+            });
             x += 2 + w;
         }
-        rules.push((0x13, 0));
+        // The closing rule (centre x + 1). It ends the line when x + 2 is the
+        // width (stored cut, as `(0x13, 0)`); otherwise its distance runs to
+        // the width: (x + 1) + dist + 2 = width.
+        rules.push(Rule {
+            style: 0x13,
+            dist: width.saturating_sub(x + 3),
+            ..Rule::default()
+        });
         Row {
             cells,
+            x0: 0,
             rules,
+            feed: None,
+            kinds: Vec::new(),
+            src: Default::default(),
+        }
+    }
+
+    /// The line above a new table: Ichitaro keeps a table's top line on the
+    /// text line above it, as a line under that line (spec §4.3), split into
+    /// items of at most `MAX_ITEM` units.
+    fn make_edge_row(&self, width: u16, table_right: u16) -> Row {
+        let mut rules = Vec::new();
+        let mut c = 1u16; // first item centre (x0 = 0)
+        while c + 2 <= table_right {
+            let d = (table_right - c - 2).min(MAX_ITEM);
+            rules.push(Rule {
+                style: Rule::BELOW,
+                a: 0,
+                b: Rule::BELOW,
+                dist: d,
+            });
+            c += d + 2;
+        }
+        // Blank to the end of the line: a cut item when one unit is left
+        // (c + 1 = width), else a full one (c + dist + 2 = width).
+        if c < width {
+            rules.push(Rule {
+                style: 0,
+                a: 0,
+                b: 0,
+                dist: width.saturating_sub(c + 2),
+            });
+        }
+        Row {
+            cells: vec![Cell {
+                left: 0,
+                right: width,
+                paragraphs: vec![Paragraph::default()],
+                src: Default::default(),
+            }],
+            x0: 0,
+            rules,
+            feed: None,
+            kinds: Vec::new(),
             src: Default::default(),
         }
     }
@@ -945,9 +1012,13 @@ impl Editor {
         let (rows, cols) = (rows.clamp(1, 100), cols.clamp(1, 20));
         self.snapshot(Kind::None);
         let width = self.grid_width();
+        let row = self.make_row(cols, width);
+        let right = row.cells.last().map(|c| c.right + 1).unwrap_or(width);
         let t = Table {
             width,
-            rows: (0..rows).map(|_| self.make_row(cols, width)).collect(),
+            rows: std::iter::once(self.make_edge_row(width, right))
+                .chain((0..rows).map(|_| row.clone()))
+                .collect(),
         };
         let empty = plen(self.para(self.caret.p)) == 0;
         let at = if empty { b } else { b + 1 };
@@ -961,7 +1032,7 @@ impl Editor {
         let first = self
             .flat
             .iter()
-            .position(|l| matches!(l, PLoc::Cell(bb, 0, 0, 0) if *bb == at))
+            .position(|l| matches!(l, PLoc::Cell(bb, 1, 0, 0) if *bb == at))
             .unwrap_or(0);
         self.caret = Pos { p: first, off: 0 };
         self.anchor = self.caret;
@@ -993,13 +1064,34 @@ impl Editor {
         self.snapshot(Kind::None);
         let blocks = self.blocks_mut();
         let remove_table = matches!(&blocks[b], Block::Table(t) if t.rows.len() <= 1);
+        // Only one-cell lines left (such as the line above a new table): they
+        // are plain lines again, the way the reader sees them.
+        let unwrap = matches!(&blocks[b], Block::Table(t)
+            if t.rows.iter().enumerate().all(|(i, row)| i == r || row.cells.len() <= 1));
         if remove_table {
             blocks.remove(b);
+        } else if unwrap {
+            let Block::Table(t) = blocks.remove(b) else {
+                unreachable!()
+            };
+            let paras: Vec<Block> = t
+                .rows
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| *i != r)
+                .flat_map(|(_, row)| row.cells)
+                .flat_map(|c| c.paragraphs)
+                .map(Block::Paragraph)
+                .collect();
+            for (k, p) in paras.into_iter().enumerate() {
+                blocks.insert(b + k, p);
+            }
         } else if let Block::Table(t) = &mut blocks[b] {
             t.rows.remove(r);
         }
         normalize_blocks(self.blocks_mut());
         self.flat = flatten(self.blocks());
+        self.caret.p = self.caret.p.min(self.flat.len().saturating_sub(1));
         self.caret.off = 0;
         self.anchor = self.caret;
         self.changed();
@@ -1114,6 +1206,11 @@ impl Editor {
 
     pub fn set_show_marks(&mut self, on: bool) {
         self.show_marks = on;
+        self.layout = None;
+    }
+
+    /// Lay out again after `doc` or `setup` was changed directly.
+    pub fn relayout(&mut self) {
         self.layout = None;
     }
 
@@ -1503,7 +1600,7 @@ impl Editor {
                 .floor()
                 .max(0.0) as usize)
                 + 1;
-            col = (((x - l.left) / self.setup.font_pt + 0.001).floor().max(0.0) as usize) + 1;
+            col = (((x - l.left) / self.setup.cell() + 0.001).floor().max(0.0) as usize) + 1;
         }
         let chars = self
             .flat

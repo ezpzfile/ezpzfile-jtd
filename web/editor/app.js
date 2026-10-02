@@ -69,7 +69,9 @@ function setEditor(ed, name) {
   if (S.ed) S.ed.free();
   S.ed = ed;
   S.name = name;
+  S.setup = null;
   S.ed.setShowMarks(S.marks);
+  paperNote();
   $("#pages").replaceChildren();
   S.pages = [];
   $("#scroller").scrollTop = 0;
@@ -129,14 +131,55 @@ function drawPage(i) {
   pg.dirty = false;
 }
 
+/** The text area of a page setup in points: left edge, width and one
+ * character cell (the engine's PageSetup::left / text_w / cell). */
+function textArea(setup) {
+  const mm = 72 / 25.4, ml = setup.margin_left_mm ?? 30, mr = setup.margin_right_mm ?? 30;
+  let L = ml * mm, W = setup.width_mm * mm - (ml + mr) * mm;
+  if (W <= setup.font_pt * 2) {
+    W = setup.chars_per_line * setup.font_pt;
+    L = Math.max(10, (setup.width_mm * mm - W) / 2);
+  }
+  return { L, W, cell: W / Math.max(1, setup.chars_per_line) };
+}
+
+/** Dash patterns of Ichitaro's line types (線種), in points. */
+const LINE_DASH = { 4: [3, 2], 5: [3, 2], 6: [3, 2], 8: [0.8, 1.6], 9: [6, 2.5], 10: [5, 1.5, 1, 1.5], 11: [5, 1.5, 1, 1.5], 15: [1, 1] };
+
+/** One line item. `k` is the line type of a ruled line (0/1 solid). */
+function drawLine(g, it) {
+  const k = it.k || 0;
+  g.save();
+  g.strokeStyle = it.color || "#111"; g.lineWidth = it.w;
+  g.setLineDash(LINE_DASH[k] || []);
+  const dx = it.x2 - it.x1, dy = it.y2 - it.y1, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len; // unit normal
+  const seg = (o) => { g.beginPath(); g.moveTo(it.x1 + nx * o, it.y1 + ny * o); g.lineTo(it.x2 + nx * o, it.y2 + ny * o); g.stroke(); };
+  const wave = (o) => { // a zigzag along the line
+    const step = 2, amp = 1.1, n = Math.max(1, Math.round(len / step));
+    g.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, a = (i % 2 ? amp : -amp) + o;
+      const x = it.x1 + dx * t + nx * a, y = it.y1 + dy * t + ny * a;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+  };
+  if (k === 7) { g.lineWidth = 0.5; seg(-0.9); seg(0.9); }
+  else if (k === 12 || k === 13) wave(0);
+  else if (k === 14) { g.lineWidth = 0.5; wave(-1); wave(1); }
+  else seg(0);
+  g.restore();
+}
+
 /** Paint a display list in page coordinates (points). */
 function paintItems(g, data, marks) {
   const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
   if (marks) {
     // text-area corner marks (like most Japanese word processors)
-    const mm = 72 / 25.4;
-    const L = (setup.width_mm * mm - setup.chars_per_line * setup.font_pt) / 2;
-    const R = setup.width_mm * mm - L, T = setup.margin_top_mm * mm, B = setup.height_mm * mm - setup.margin_bottom_mm * mm;
+    const mm = 72 / 25.4, A = textArea(setup);
+    const L = A.L;
+    const R = A.L + A.W, T = setup.margin_top_mm * mm, B = setup.height_mm * mm - setup.margin_bottom_mm * mm;
     g.strokeStyle = "#a8b0c4"; g.lineWidth = 0.5; g.beginPath();
     for (const [x, y, dx, dy] of [[L, T, -1, -1], [R, T, 1, -1], [L, B, -1, 1], [R, B, 1, 1]]) {
       g.moveTo(x + dx * 10, y); g.lineTo(x, y); g.lineTo(x, y + dy * 10);
@@ -162,8 +205,7 @@ function paintItems(g, data, marks) {
         } else g.fillText(ch, x, it.y);
       }
     } else if (it.t === "Line") {
-      g.strokeStyle = it.color || "#111"; g.lineWidth = it.w;
-      g.beginPath(); g.moveTo(it.x1, it.y1); g.lineTo(it.x2, it.y2); g.stroke();
+      drawLine(g, it);
     } else if (it.t === "Mark" && marks) {
       g.strokeStyle = "#6fa5ff"; g.fillStyle = "#6fa5ff"; g.lineWidth = 0.6;
       const z = it.size;
@@ -269,9 +311,8 @@ function drawRuler() {
   const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
   const s = scale(), sc = $("#scroller"), pg = S.pages[0].div;
-  const mm = 72 / 25.4;
-  const left = (setup.width_mm * mm - setup.chars_per_line * setup.font_pt) / 2;
-  const x0 = pg.offsetLeft - sc.scrollLeft + left * s, cw = setup.font_pt * s;
+  const A = textArea(setup);
+  const x0 = pg.offsetLeft - sc.scrollLeft + A.L * s, cw = A.cell * s;
   const css = getComputedStyle(document.documentElement);
   g.fillStyle = css.getPropertyValue("--ink-50"); g.fillRect(x0, 4, cw * setup.chars_per_line, H - 8);
   g.strokeStyle = css.getPropertyValue("--ink-300"); g.fillStyle = css.getPropertyValue("--ink-500");
@@ -1063,7 +1104,19 @@ function bindChrome() {
     b.addEventListener("click", () => CMDS[cmd]());
   }
   $$("#jump .seg button").forEach((b) => b.addEventListener("click", () => switchJump(b.dataset.tab)));
-  $("#st-note").textContent = "用紙: A4 40字×36行";
+  paperNote();
+}
+
+/** Status bar: the paper and the 字数 × 行数 of the open document. */
+function paperNote() {
+  const n = $("#st-note");
+  if (!n || !S.ed) return;
+  const st = JSON.parse(S.ed.setupJson());
+  const w = Math.round(st.width_mm), h = Math.round(st.height_mm);
+  const sizes = { "210x297": "A4", "297x420": "A3", "182x257": "B5", "257x364": "B4", "148x210": "A5" };
+  const key = w <= h ? `${w}x${h}` : `${h}x${w}`;
+  const paper = (sizes[key] || `${w}×${h}mm`) + (w > h ? " 横" : "");
+  n.textContent = `用紙: ${paper} ${st.chars_per_line}字×${st.lines_per_page}行`;
 }
 
 boot().catch((e) => { document.body.textContent = "起動できませんでした: " + (e.message || e); });

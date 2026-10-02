@@ -24,6 +24,7 @@ pub mod error;
 pub mod export;
 pub mod jtdw;
 pub mod layout;
+pub mod page;
 pub mod pdf;
 pub mod props;
 pub mod save;

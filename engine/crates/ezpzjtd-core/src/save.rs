@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::cfb::Cfb;
 use crate::cfbw::{self, Tree};
-use crate::doc::{self, Align, Block, Document, Paragraph};
+use crate::doc::{self, Align, Block, Document, Indent, LineFeed, Paragraph};
 use crate::edit::normalize_blocks;
 use crate::error::{Error, Result};
 use crate::jtdw::ssmg_pack;
@@ -852,6 +852,61 @@ fn has_rules(payload: &[u16]) -> bool {
     text::para_tlv(payload).iter().any(|(t, _)| *t == 0x8f)
 }
 
+/// Indents (0x26) and line feed (0x20) of a line header payload.
+fn tlv_fmt(payload: &[u16]) -> (Option<Indent>, Option<LineFeed>) {
+    let (mut i, mut f) = (None, None);
+    for (tag, v) in text::para_tlv(payload) {
+        match tag {
+            0x20 => f = LineFeed::from_tlv(&v),
+            0x26 => i = Indent::from_tlv(&v),
+            _ => {}
+        }
+    }
+    (i, f)
+}
+
+/// Replace, add (in ascending tag order, as Ichitaro writes them) or remove
+/// one TLV item of a line header payload.
+fn set_tlv(payload: &[u16], tag: u16, val: Option<&[u16]>) -> Vec<u16> {
+    let mut items: Vec<(u16, Vec<u16>)> = Vec::new();
+    let mut j = 1usize;
+    while j + 1 < payload.len() && payload[j] != 0xffff {
+        let n = payload[j + 1] as usize;
+        let end = (j + 2 + n).min(payload.len());
+        items.push((payload[j], payload[j + 2..end].to_vec()));
+        j = end;
+    }
+    items.retain(|(t, _)| *t != tag);
+    if let Some(v) = val {
+        let at = items
+            .iter()
+            .position(|(t, _)| *t > tag)
+            .unwrap_or(items.len());
+        items.insert(at, (tag, v.to_vec()));
+    }
+    let mut out = vec![payload.first().copied().unwrap_or(0)];
+    for (t, v) in items {
+        out.push(t);
+        out.push(v.len() as u16);
+        out.extend(v);
+    }
+    out.extend_from_slice(&payload[j.min(payload.len())..]);
+    out
+}
+
+/// Make a line header payload carry these indents and line feed.
+fn set_fmt(payload: &[u16], indent: Option<Indent>, feed: Option<LineFeed>) -> Vec<u16> {
+    let (i0, f0) = tlv_fmt(payload);
+    let mut out = payload.to_vec();
+    if i0 != indent {
+        out = set_tlv(&out, 0x26, indent.map(|i| i.to_tlv()).as_deref());
+    }
+    if f0 != feed {
+        out = set_tlv(&out, 0x20, feed.map(|f| f.to_tlv()).as_deref());
+    }
+    out
+}
+
 /// Rewrite tag 0x24 (alignment) of a line header payload.
 fn set_align(payload: &[u16], align: Align) -> Vec<u16> {
     let val = match align {
@@ -1321,6 +1376,17 @@ fn save_sheet(
                 .unwrap_or(0)
                 .min(n.saturating_sub(1) as u32);
                 let base = t.ru.get(near as usize).copied().unwrap_or(0);
+                // Ruled-line records carry no character look: Ichitaro gives
+                // them the same properties as the text around, all set to 0
+                // (a record that keeps a character's look draws its lines
+                // wrong).
+                let rec = if t.raws.list.is_empty() {
+                    base
+                } else {
+                    let zero: RawProps =
+                        t.raws.list[base as usize].keys().map(|k| (*k, 0)).collect();
+                    t.raws.add(zero)
+                };
                 let (units, raws): (Vec<u16>, Vec<u32>) = match e.it {
                     It::Ch(c) => {
                         let l1 = looks1[e.para][e.ch];
@@ -1338,6 +1404,10 @@ fn save_sheet(
                         let k = u.len();
                         (u, vec![idx; k])
                     }
+                    // the end of a line in a cell of a new row: a record unit too
+                    It::End if e.cell != NONE && table_row(blocks1, e.row).src.get().is_none() => {
+                        (vec![text::PARA_END], vec![rec])
+                    }
                     It::End => (vec![text::PARA_END], vec![base]),
                     It::Brk => (vec![text::PAGE_BREAK], vec![base]),
                     It::RowStart(_) => {
@@ -1349,16 +1419,22 @@ fn save_sheet(
                         };
                         let u = record(0x0010, &payload);
                         let k = u.len();
-                        (u, vec![base; k])
+                        // a copied line header keeps the style states of its
+                        // units: Ichitaro keeps the line types there
+                        let styles = tmpl
+                            .map(|h| (h.0 as usize, h.1 as usize))
+                            .filter(|&(s0, l)| l == k && s0 + l <= t.ru.len())
+                            .map(|(s0, l)| t.ru[s0..s0 + l].to_vec());
+                        (u, styles.unwrap_or_else(|| vec![rec; k]))
                     }
                     It::CellStart(..) => {
                         let row = table_row(blocks1, e.row);
                         let c = &row.cells[e.cell];
                         let u = record(0x0030, &[0, c.left, c.right, 0x00ff, 0]);
                         let k = u.len();
-                        (u, vec![base; k])
+                        (u, vec![rec; k])
                     }
-                    It::RowEnd => (vec![text::ROW_END], vec![base]),
+                    It::RowEnd => (vec![text::ROW_END], vec![rec]),
                     It::TabStart => (vec![], vec![]),
                     It::TabEnd => {
                         // the paragraph after a new table needs a plain line header
@@ -1576,26 +1652,56 @@ fn template_row(blocks0: &[Block], prev: Option<&I0>, next: Option<&I0>) -> Opti
     None
 }
 
-/// Line header payload with vertical rules for a new table row:
-/// `width, 0, x0`, then one `(0x13, 0, 0, cell width)` rule per cell and the
-/// closing rule. Rules are 2 grid units wide; the line adds up to `width`
-/// (spec §4.3), with any space after the last rule as the closing item's distance.
+/// Line header payload for a new table row: `width, 0, x0`, then the row's
+/// rule items `(style, a, b, dist)`, the last one cut to `(style, 0)` when it
+/// is a closing rule with nothing after it (spec §4.3). Rows the editor made
+/// add up to `width`; anything else gets plain rules between its cells.
 fn synth_rules(row: &doc::Row, width: u16) -> Vec<u16> {
-    let x0 = row
-        .cells
-        .first()
-        .map(|c| c.left.saturating_sub(2))
-        .unwrap_or(0);
-    let end = row.cells.last().map(|c| c.right + 2).unwrap_or(2);
-    let width = width.max(end);
-    let mut v = vec![width, 0, x0];
-    for c in &row.cells {
-        v.extend_from_slice(&[0x13, 0, 0, c.right.saturating_sub(c.left)]);
-    }
-    if end < width {
-        v.extend_from_slice(&[0x13, 0, 0, width - end]);
+    let sum = |x0: u16, rules: &[doc::Rule]| -> u32 {
+        let mut c = x0 as u32 + 1;
+        for (i, r) in rules.iter().enumerate() {
+            let cut = i + 1 == rules.len() && r.a == 0 && r.b == 0 && r.dist == 0;
+            c += if cut {
+                1
+            } else {
+                r.a as u32 + r.dist as u32 + 2
+            };
+        }
+        c
+    };
+    let (x0, rules) = if !row.rules.is_empty() && sum(row.x0, &row.rules) == width as u32 {
+        (row.x0, row.rules.clone())
     } else {
-        v.extend_from_slice(&[0x13, 0]);
+        let x0 = row
+            .cells
+            .first()
+            .map(|c| c.left.saturating_sub(2))
+            .unwrap_or(0);
+        let mut rules: Vec<doc::Rule> = row
+            .cells
+            .iter()
+            .map(|c| doc::Rule {
+                style: 0x13,
+                a: 0,
+                b: 0,
+                dist: c.right.saturating_sub(c.left),
+            })
+            .collect();
+        let end = row.cells.last().map(|c| c.right + 2).unwrap_or(2);
+        rules.push(doc::Rule {
+            style: 0x13,
+            dist: width.saturating_sub(end),
+            ..Default::default()
+        });
+        (x0, rules)
+    };
+    let mut v = vec![width, 0, x0];
+    for (i, r) in rules.iter().enumerate() {
+        if i + 1 == rules.len() && r.a == 0 && r.b == 0 && r.dist == 0 {
+            v.extend_from_slice(&[r.style, 0]);
+        } else {
+            v.extend_from_slice(&[r.style, r.a, r.b, r.dist]);
+        }
     }
     let mut p = vec![0, 0x8f, v.len() as u16];
     p.extend(v);
@@ -1655,19 +1761,27 @@ fn fix_headers(
     for (k, (a, b)) in po.iter().zip(p1.iter()).enumerate() {
         let Some(s) = a.src.get() else { continue };
         if s.in_row {
-            if b.align == Align::Other {
-                continue;
-            }
             if let Some(h) = s.eff_header {
-                let pl = replace
+                let mut pl = replace
                     .get(&h.0)
                     .map(|x| x.1.clone())
                     .unwrap_or_else(|| payload_of(units, h));
-                if tlv_align(&pl) != b.align {
+                let mut changed = false;
+                if b.align != Align::Other && tlv_align(&pl) != b.align {
                     if replace.contains_key(&h.0) {
                         conflict = true;
                     }
-                    replace.insert(h.0, (h.1, set_align(&pl, b.align)));
+                    pl = set_align(&pl, b.align);
+                    changed = true;
+                }
+                // a line of a ruled box (a top-level paragraph in the model)
+                // keeps its line feed on the row's line header
+                if !is_row_para(blocks1, k) && tlv_fmt(&pl).1 != b.feed {
+                    pl = set_tlv(&pl, 0x20, b.feed.map(|f| f.to_tlv()).as_deref());
+                    changed = true;
+                }
+                if changed {
+                    replace.insert(h.0, (h.1, pl));
                 }
             }
             continue;
@@ -1696,7 +1810,8 @@ fn fix_headers(
             (None, None) => default_header_payload(),
         };
         let align_ok = b.align == Align::Other || tlv_align(&current) == b.align;
-        if align_ok && (current == wbase || (has_rules(&current) && has_rules(&wbase))) {
+        let fmt_ok = tlv_fmt(&current) == (b.indent, b.feed);
+        if align_ok && fmt_ok && (current == wbase || (has_rules(&current) && has_rules(&wbase))) {
             continue;
         }
         // a plain line header (a ruled line's geometry is not copied)
@@ -1710,6 +1825,7 @@ fn fix_headers(
         } else {
             set_align(&plain, b.align)
         };
+        let desired = set_fmt(&desired, b.indent, b.feed);
         if desired == current {
             continue;
         }
@@ -1773,10 +1889,36 @@ fn tok_start(t: &text::Token) -> usize {
 }
 
 /// Parse the new text and compare it with the edited model.
+/// Tables whose rows all have one cell read back as plain lines (a ruled line
+/// with only a line under it, for example a table whose rows were all
+/// deleted but the line above). Compare against what the reader will see.
+fn as_read(blocks: &[Block]) -> Vec<Block> {
+    let mut out = Vec::new();
+    for b in blocks {
+        match b {
+            Block::Table(t) if t.rows.iter().all(|r| r.cells.len() <= 1) => {
+                for r in &t.rows {
+                    for c in &r.cells {
+                        if c.paragraphs.is_empty() {
+                            out.push(Block::Paragraph(doc::Paragraph::default()));
+                        }
+                        out.extend(c.paragraphs.iter().cloned().map(Block::Paragraph));
+                    }
+                }
+            }
+            _ => out.push(b.clone()),
+        }
+    }
+    normalize_blocks(&mut out);
+    out
+}
+
 fn verify(packed: &[u8], blocks1: &[Block]) -> Result<()> {
     let (units, map) = doc::units_and_styles(packed)?;
     let (mut got, _) = doc::blocks_tracked(&units, &map);
     normalize_blocks(&mut got);
+    let want = as_read(blocks1);
+    let blocks1 = &want[..];
     let a = flatten1(&got);
     let b = flatten1(blocks1);
     let fail = |what: String| {
@@ -1790,6 +1932,25 @@ fn verify(packed: &[u8], blocks1: &[Block]) -> Result<()> {
             .zip(&b)
             .position(|(x, y)| x.it != y.it)
             .unwrap_or(a.len().min(b.len()));
+        if std::env::var("EZPZJTD_SAVE_DEBUG").is_ok() {
+            let lo = at.saturating_sub(6);
+            eprintln!(
+                "VERIFY got  {:?}",
+                a.iter()
+                    .skip(lo)
+                    .take(14)
+                    .map(|x| &x.it)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "VERIFY want {:?}",
+                b.iter()
+                    .skip(lo)
+                    .take(14)
+                    .map(|x| &x.it)
+                    .collect::<Vec<_>>()
+            );
+        }
         return fail(format!("text or structure differs at item {at}"));
     }
     let pa = flat_paras(&got);
@@ -1798,6 +1959,29 @@ fn verify(packed: &[u8], blocks1: &[Block]) -> Result<()> {
         let in_row = false;
         if x.page_break_before != y.page_break_before {
             return fail(format!("page break of paragraph {k}"));
+        }
+        // indents and line feed: a line of a ruled box keeps only its line
+        // feed (on the row's line header), a cell of a table none (Row::feed),
+        // and an empty line the reader adds (no source) is not stored
+        let stored = x.src.get().map(|s| (s.in_row,));
+        let differs = match stored {
+            Some((true,)) => x.feed != y.feed,
+            Some((false,)) => (x.indent, x.feed) != (y.indent, y.feed),
+            None => false,
+        };
+        if differs && !is_row_para(&got, k) {
+            if std::env::var("EZPZJTD_SAVE_DEBUG").is_ok() {
+                eprintln!(
+                    "FMT {k} {:?} got {:?} want {:?} src {:?}",
+                    y.plain_text().chars().take(12).collect::<String>(),
+                    (x.indent, x.feed),
+                    (y.indent, y.feed),
+                    y.src
+                        .get()
+                        .map(|s| (s.in_row, s.own_headers.clone(), s.eff_header))
+                );
+            }
+            return fail(format!("indent or line feed of paragraph {k}"));
         }
         if !in_row && y.align != Align::Other && x.align != y.align && !is_row_para(&got, k) {
             return fail(format!(
@@ -1874,6 +2058,32 @@ mod tests {
             }
         }
         assert_eq!(out, b);
+    }
+
+    /// Indents and line feed go into the line header in tag order, and go
+    /// away again when the model has none.
+    #[test]
+    fn indent_and_feed_tlv() {
+        let p = vec![0, 0x24, 1, 1, 0x8f, 1, 0xa0, 0xffff, 0];
+        let ind = Indent {
+            mm: false,
+            left: 4,
+            right: 0,
+            first_left: 2,
+            first_right: 0,
+        };
+        let feed = LineFeed { kind: 2, value: 0 };
+        let q = set_fmt(&p, Some(ind), Some(feed));
+        assert_eq!(
+            q,
+            vec![
+                0, 0x20, 4, 2, 0, 0, 0, 0x24, 1, 1, 0x26, 5, 0, 4, 0, 2, 0, 0x8f, 1, 0xa0, 0xffff,
+                0
+            ]
+        );
+        assert_eq!(tlv_fmt(&q), (Some(ind), Some(feed)));
+        assert_eq!(tlv_align(&q), Align::Center);
+        assert_eq!(set_fmt(&q, None, None), p);
     }
 
     #[test]

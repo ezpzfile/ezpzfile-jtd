@@ -136,10 +136,33 @@ fn text_runs(text: &str, props: &str) -> String {
     out
 }
 
-fn para_xml(p: &Paragraph, base: f32) -> String {
+fn para_xml(p: &Paragraph, setup: &PageSetup) -> String {
+    let base = setup.font_pt;
+    let tw = |pt: f32| (pt * 20.0).round() as i32;
     let mut ppr = String::new();
     if p.page_break_before {
         ppr.push_str("<w:pageBreakBefore/>");
+    }
+    // 改行幅: an exact line height in Word
+    if let Some(f) = p.feed.and_then(|f| f.points(setup.pitch())) {
+        ppr.push_str(&format!(
+            "<w:spacing w:line=\"{}\" w:lineRule=\"exact\"/>",
+            tw(f.max(1.0))
+        ));
+    }
+    if let Some(i) = p.indent {
+        let [l, r, fl, _] = i.points(setup.cell());
+        let first = fl - l;
+        let fl_attr = if first >= 0.0 {
+            format!("w:firstLine=\"{}\"", tw(first))
+        } else {
+            format!("w:hanging=\"{}\"", tw(-first))
+        };
+        ppr.push_str(&format!(
+            "<w:ind w:left=\"{}\" w:right=\"{}\" {fl_attr}/>",
+            tw(l),
+            tw(r)
+        ));
     }
     match p.align {
         Align::Center => ppr.push_str("<w:jc w:val=\"center\"/>"),
@@ -174,7 +197,6 @@ fn para_xml(p: &Paragraph, base: f32) -> String {
 const NO_BORDERS: &str = "<w:tcBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/></w:tcBorders>";
 
 fn table_xml(t: &Table, setup: &PageSetup) -> String {
-    let base = setup.font_pt;
     let rows: Vec<Vec<(u16, u16)>> = t
         .rows
         .iter()
@@ -245,7 +267,7 @@ fn table_xml(t: &Table, setup: &PageSetup) -> String {
                 x.push_str("<w:p/>");
             }
             for p in &c.paragraphs {
-                x.push_str(&para_xml(p, base));
+                x.push_str(&para_xml(p, setup));
             }
             x.push_str("</w:tc>");
             at = a + span;
@@ -260,7 +282,6 @@ fn table_xml(t: &Table, setup: &PageSetup) -> String {
 }
 
 pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> String {
-    let base = setup.font_pt;
     let mut body = String::new();
     let sheets: Vec<usize> = match sheet {
         Some(s) => vec![s],
@@ -272,17 +293,20 @@ pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> 
         }
         for b in &doc.sheets[si].blocks {
             match b {
-                Block::Paragraph(p) => body.push_str(&para_xml(p, base)),
+                Block::Paragraph(p) => body.push_str(&para_xml(p, setup)),
                 Block::Table(t) => body.push_str(&table_xml(t, setup)),
             }
         }
     }
     let tw = |pt: f32| (pt * 20.0).round() as u32;
-    let lr = tw(setup.left());
+    let (l, r) = (
+        tw(setup.left()),
+        tw(setup.page_w() - setup.left() - setup.text_w()),
+    );
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
 <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}\
-<w:sectPr><w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{lr}\" w:bottom=\"{}\" w:left=\"{lr}\" w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/><w:docGrid w:type=\"lines\" w:linePitch=\"{}\"/></w:sectPr></w:body></w:document>",
+<w:sectPr><w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{r}\" w:bottom=\"{}\" w:left=\"{l}\" w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/><w:docGrid w:type=\"lines\" w:linePitch=\"{}\"/></w:sectPr></w:body></w:document>",
         tw(setup.page_w()),
         tw(setup.page_h()),
         tw(setup.top()),

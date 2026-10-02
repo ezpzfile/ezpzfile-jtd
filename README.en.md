@@ -16,13 +16,15 @@ Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese mi
 - body text: 99.9 % of the visible characters match what **Ichitaro Viewer itself** shows
   (87 of 94 files identical), checked automatically with JustSystems' free viewer
 - edited files **save back to `.jtd`**, and Ichitaro Viewer opens them (see below)
-- paragraphs and alignment, ruled tables (merged cells, column widths, ruled/unruled lines)
+- paragraphs, alignment, indents, line feed (改行幅)
+- ruled tables (merged cells, column widths, vertical and **horizontal rules**, rules between lines or through them, the 16 **line types**: thick, dotted, double and so on)
+- page setup: **paper size and orientation, margins, characters per line and lines per page**, base character size
 - font size, bold, underline, colour, ruby (furigana), page breaks
 - document properties, including the **original file path** that Ichitaro leaves inside files
 - export: plain text, Markdown, HTML, JSON
 
-Not yet: horizontal rules, indents and line spacing, page size and margins, pictures,
-vertical writing, `.jttc` (compressed), saving a *new* document as `.jtd`. See the
+Not yet: pictures, vertical writing (the setting is read), headers and footers, columns (段組),
+`.jttc` (compressed), saving a *new* document as `.jtd`. See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 
 ## Editor
@@ -46,13 +48,17 @@ is used. Details: [docs/EDITOR.en.md](docs/EDITOR.en.md)
 A document opened from a `.jtd` saves back to `.jtd` (Ctrl+S). The engine does not
 regenerate the file: it **patches the original**, so everything it does not understand
 yet (ruled-line geometry, hidden fields, macros, pictures) stays byte for byte. Text,
-paragraphs, bold / size / underline / colour, alignment, page breaks and table lines
-are written. Every save is read back and compared with the editor; if anything differs
+paragraphs, bold / size / underline / colour, alignment, indents and line feed, page
+breaks and table lines are written (a new row keeps the line types of the row it
+copies). Every save is read back and compared with the editor; if anything differs
 the save is refused with a reason and nothing is written (then use Word or PDF).
 
 Checked with JustSystems' own Ichitaro Viewer 2022, run automatically through Wine
 ([tools/taroview](tools/taroview/README.md)): see [experiments/results.md](experiments/results.md) (in Korean).
-Full Ichitaro (the paid editor) has not been tested yet.
+We also check with **the latest 一太郎 itself** (run through Wine,
+[tools/taro2026](tools/taro2026/README.md)): all 274 files saved by the editor open in it,
+and a new table draws its vertical and horizontal rules like a table made in Ichitaro. See
+[docs/research/ichitaro-latest.md](docs/research/ichitaro-latest.md).
 
 ### PDF
 
@@ -130,6 +136,7 @@ docs/PLAN.*.md         roadmap; docs/EDITOR.*.md editor design (日本語, Engli
 docs/research/         research notes and sample-making guides
 tools/                 corpus download and research scripts
 tools/taroview/        open files in the real Ichitaro Viewer (Wine) and read back what it shows
+tools/taro2026/        make paired samples with the latest 一太郎 (Wine) and open saved files in it
 experiments/           notes and results of the viewer checks
 corpus/manifest.tsv    URLs of public sample files (files themselves are not committed)
 ```

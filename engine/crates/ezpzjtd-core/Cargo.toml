@@ -10,3 +10,6 @@ authors.workspace = true
 [dependencies]
 encoding_rs.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

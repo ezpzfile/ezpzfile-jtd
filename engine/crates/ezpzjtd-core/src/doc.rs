@@ -99,6 +99,85 @@ pub struct Run {
     pub inline: bool,
 }
 
+/// Paragraph indents (インデント), line header TLV `0026`: (unit, left,
+/// right, first-line left, first-line right). Spec §4.1.
+#[derive(Debug, Clone, Copy, Serialize, Default, PartialEq, Eq)]
+pub struct Indent {
+    /// Values in 1/100 mm; otherwise in half-width columns.
+    pub mm: bool,
+    pub left: i16,
+    pub right: i16,
+    /// Left and right of the first line, from the margins (not from `left`).
+    pub first_left: i16,
+    pub first_right: i16,
+}
+
+impl Indent {
+    pub(crate) fn from_tlv(v: &[u16]) -> Option<Indent> {
+        if v.len() < 5 {
+            return None;
+        }
+        let i = Indent {
+            mm: v[0] == 1,
+            left: v[1] as i16,
+            right: v[2] as i16,
+            first_left: v[3] as i16,
+            first_right: v[4] as i16,
+        };
+        (i.left != 0 || i.right != 0 || i.first_left != 0 || i.first_right != 0).then_some(i)
+    }
+    /// The four values in points, given the width of one character cell.
+    pub(crate) fn to_tlv(self) -> Vec<u16> {
+        vec![
+            self.mm as u16,
+            self.left as u16,
+            self.right as u16,
+            self.first_left as u16,
+            self.first_right as u16,
+        ]
+    }
+    pub fn points(&self, cell: f32) -> [f32; 4] {
+        let k = if self.mm { 72.0 / 2540.0 } else { cell / 2.0 };
+        [self.left, self.right, self.first_left, self.first_right].map(|v| v as f32 * k)
+    }
+}
+
+/// Line feed after each line of the paragraph (改行幅), line header TLV
+/// `0020`: (kind, value, kind, value). Spec §4.1.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct LineFeed {
+    /// 1: none (0), 2: 1/2, 3: 1/3, 4: 1/4, 5: 2/3, 6: 3/4, 7: ruby,
+    /// 8: `value` in 1/100 mm, 9: `value` in 0.1 % of the normal feed.
+    pub kind: u16,
+    pub value: u16,
+}
+
+impl LineFeed {
+    pub(crate) fn from_tlv(v: &[u16]) -> Option<LineFeed> {
+        let (kind, value) = (*v.first()?, v.get(1).copied().unwrap_or(0));
+        (1..=9).contains(&kind).then_some(LineFeed { kind, value })
+    }
+    /// As the latest 一太郎 writes it: the second pair empty.
+    pub(crate) fn to_tlv(self) -> Vec<u16> {
+        vec![self.kind, self.value, 0, 0]
+    }
+    /// The feed in points, given the normal one. `None`: the normal feed.
+    pub fn points(&self, normal: f32) -> Option<f32> {
+        let f = match self.kind {
+            1 => 0.0,
+            2 => normal / 2.0,
+            3 => normal / 3.0,
+            4 => normal / 4.0,
+            5 => normal * 2.0 / 3.0,
+            6 => normal * 3.0 / 4.0,
+            8 if self.value > 0 => self.value as f32 * 72.0 / 2540.0,
+            9 if self.value > 0 => normal * self.value as f32 / 1000.0,
+            _ => return None,
+        };
+        Some(f)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Paragraph {
     pub align: Align,
@@ -106,6 +185,10 @@ pub struct Paragraph {
     /// Start this paragraph on a new page (改ページ).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub page_break_before: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indent: Option<Indent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feed: Option<LineFeed>,
     #[serde(skip)]
     pub src: Src<ParaSrc>,
 }
@@ -132,37 +215,218 @@ pub struct Cell {
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Row {
     pub cells: Vec<Cell>,
-    /// Vertical rules of this text line (TLV tag 0x8f), as `(style, distance)`.
-    /// style >= 0x10 draws a line; 0x08 is a gap with no line. See spec §4.3.
-    pub rules: Vec<(u16, u16)>,
+    /// Where the first rule's centre is, minus 1 (the third word of TLV 0x8f).
+    pub x0: u16,
+    /// The ruled-line items of this text line (TLV tag 0x8f). See spec §4.3.
+    pub rules: Vec<Rule>,
+    /// Line feed (改行幅) of the line that holds the row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feed: Option<LineFeed>,
+    /// Line types (線種) of `rules`, item by item; empty when all are plain.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<RuleKinds>,
     #[serde(skip)]
     pub src: Src<RowSrc>,
+}
+
+/// Line types (線種 1-16; 0 = the default, type 1) of one ruled-line item.
+/// Ichitaro keeps them as style properties on the item's words (spec §4.3):
+/// on the first word, property 1 and 2 for the upper and lower half of the
+/// vertical rule and property 3 / 8 for the item's own horizontal line
+/// through the middle / under the line; on the third word, property 3 / 8
+/// for the line to the next item.
+#[derive(Debug, Clone, Copy, Serialize, Default, PartialEq, Eq)]
+pub struct RuleKinds {
+    pub up: u8,
+    pub down: u8,
+    pub mid: u8,
+    pub below: u8,
+    pub next_mid: u8,
+    pub next_below: u8,
+    /// The vertical rule that `b` places at the end of the item's own line.
+    pub b_up: u8,
+    pub b_down: u8,
+}
+
+/// One item of a ruled line: `(style, a, b, dist)` (spec §4.3).
+///
+/// `style`: 0x10 half-width rule, 0x20 full-width rule (0 when there is no
+/// vertical rule), plus bits 1 (vertical, upper half of the line), 2 (lower
+/// half), 4 (horizontal line through the middle of the line, starting here)
+/// and 8 (horizontal line under the line, starting here). `a`: length of a
+/// horizontal line that does not run to the next rule. `b`: the horizontal
+/// line from here to the next rule (8 under the line, class + 4 through the
+/// middle). The next item is `a + dist + 2` grid units further on.
+#[derive(Debug, Clone, Copy, Serialize, Default, PartialEq, Eq)]
+pub struct Rule {
+    pub style: u16,
+    pub a: u16,
+    pub b: u16,
+    pub dist: u16,
+}
+
+impl Rule {
+    pub const UP: u16 = 1;
+    pub const DOWN: u16 = 2;
+    pub const MID: u16 = 4;
+    pub const BELOW: u16 = 8;
+
+    /// Vertical bits (UP, DOWN) when this item draws a vertical rule.
+    pub fn vertical(&self) -> u16 {
+        if self.style >= 0x10 {
+            self.style & 3
+        } else {
+            0
+        }
+    }
+}
+
+/// The lines one ruled text line draws, in grid units (rule centres).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RowLines {
+    /// `(x, upper half, lower half)`
+    pub verticals: Vec<(u16, bool, bool)>,
+    /// `(x1, x2)` under the line
+    pub below: Vec<(u16, u16)>,
+    /// `(x1, x2)` through the middle of the line
+    pub middle: Vec<(u16, u16)>,
+    /// Line types, one per entry of the lists above: `(upper, lower)` for
+    /// the verticals.
+    pub vertical_kinds: Vec<(u8, u8)>,
+    pub below_kinds: Vec<u8>,
+    pub middle_kinds: Vec<u8>,
 }
 
 impl Row {
     /// True when the line has at least one drawn vertical rule.
     pub fn ruled(&self) -> bool {
-        self.rules.iter().any(|&(s, _)| s >= 0x10)
+        self.rules.iter().any(|r| r.vertical() != 0)
+    }
+
+    /// Where the rules and horizontal lines of this line are.
+    pub fn lines(&self) -> RowLines {
+        let mut out = RowLines::default();
+        let mut c = self.x0 as u32 + 1;
+        for (i, r) in self.rules.iter().enumerate() {
+            let k = self.kinds.get(i).copied().unwrap_or_default();
+            let next = c + r.a as u32 + r.dist as u32 + 2;
+            let v = r.vertical();
+            if v != 0 {
+                out.verticals
+                    .push((c as u16, v & Rule::UP != 0, v & Rule::DOWN != 0));
+                out.vertical_kinds.push((k.up, k.down));
+            }
+            // `b` with a class (0x10 / 0x20) is the style of a vertical rule
+            // at the end of this item's own line (`centre + a + 1`)
+            if r.b >= 0x10 && r.b & 3 != 0 {
+                let x = (c + r.a as u32 + 1).min(u16::MAX as u32) as u16;
+                out.verticals
+                    .push((x, r.b & Rule::UP != 0, r.b & Rule::DOWN != 0));
+                out.vertical_kinds.push((k.b_up, k.b_down));
+            }
+            let own = r.style & (Rule::MID | Rule::BELOW);
+            let to_next = r.b & (Rule::MID | Rule::BELOW);
+            // kinds: (through the middle, under the line)
+            let mut push = |bits: u16, x1: u32, x2: u32, (km, kb): (u8, u8)| {
+                let seg = (
+                    x1.min(u16::MAX as u32) as u16,
+                    x2.min(u16::MAX as u32) as u16,
+                );
+                if x2 > x1 {
+                    if bits & Rule::BELOW != 0 {
+                        out.below.push(seg);
+                        out.below_kinds.push(kb);
+                    }
+                    if bits & Rule::MID != 0 {
+                        out.middle.push(seg);
+                        out.middle_kinds.push(km);
+                    }
+                }
+            };
+            if own != 0 && r.a > 0 {
+                push(own, c, c + r.a as u32 + 1, (k.mid, k.below));
+            }
+            if to_next != 0 {
+                push(to_next, c, next, (k.next_mid, k.next_below));
+            } else if own != 0 && r.a == 0 {
+                push(own, c, next, (k.mid, k.below));
+            }
+            c = next;
+        }
+        out
     }
 }
 
-/// Parse the item list of TLV tag 0x8f: `[width, 0, x0]` then items.
-/// Items with style < 0x10 are 2 words `(style, dist)`; others are 4 words
-/// `(style, a, b, dist)`. The final item may be cut to 2 words.
-pub fn parse_rules(v: &[u16]) -> Vec<(u16, u16)> {
+/// Index (in the record payload) of the first value of TLV `tag`.
+fn tlv_value_at(payload: &[u16], tag: u16) -> Option<usize> {
+    let mut j = 1usize;
+    while j + 1 < payload.len() && payload[j] != 0xffff {
+        if payload[j] == tag {
+            return Some(j + 2);
+        }
+        j += 2 + payload[j + 1] as usize;
+    }
+    None
+}
+
+/// Line types of the items of a ruled line whose TLV values start at unit
+/// `v0` (see RuleKinds). Empty when every item is plain.
+fn rule_kinds(map: &StyleMap, v0: usize, n: usize) -> Vec<RuleKinds> {
+    let get = |u: usize, id: u8| -> u8 {
+        match map.at(u).and_then(|p| p.get(&id).copied()) {
+            Some(v) if (2..=16).contains(&v) => v as u8,
+            _ => 0,
+        }
+    };
+    let mut out = Vec::new();
+    let mut i = 3usize;
+    while i + 1 < n {
+        let full = i + 3 < n;
+        let u = v0 + i;
+        out.push(RuleKinds {
+            up: get(u, 1),
+            down: get(u, 2),
+            mid: get(u, 3),
+            below: get(u, 8),
+            next_mid: if full { get(u + 2, 3) } else { 0 },
+            next_below: if full { get(u + 2, 8) } else { 0 },
+            b_up: if full { get(u + 2, 1) } else { 0 },
+            b_down: if full { get(u + 2, 2) } else { 0 },
+        });
+        i += if full { 4 } else { 2 };
+    }
+    if out.iter().all(|k| *k == RuleKinds::default()) {
+        out.clear();
+    }
+    out
+}
+
+/// Parse the item list of TLV tag 0x8f: `[width, 0, x0]` then 4-word items
+/// `(style, a, b, dist)`; the final item may be cut to `(style, dist)`.
+pub fn parse_rules(v: &[u16]) -> (u16, Vec<Rule>) {
+    let x0 = v.get(2).copied().unwrap_or(0);
     let mut out = Vec::new();
     let mut i = 3usize;
     while i + 1 < v.len() {
-        let st = v[i];
-        if st < 0x10 || i + 3 >= v.len() {
-            out.push((st, v[i + 1]));
-            i += 2;
-        } else {
-            out.push((st, v[i + 3]));
+        if i + 3 < v.len() {
+            out.push(Rule {
+                style: v[i],
+                a: v[i + 1],
+                b: v[i + 2],
+                dist: v[i + 3],
+            });
             i += 4;
+        } else {
+            out.push(Rule {
+                style: v[i],
+                a: 0,
+                b: 0,
+                dist: v[i + 1],
+            });
+            i += 2;
         }
     }
-    out
+    (x0, out)
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -214,6 +478,9 @@ pub struct Document {
     /// Embedded objects (`Embedding n`, `OleItem n`, figures).
     pub objects: Vec<String>,
     pub warnings: Vec<String>,
+    /// Page setup (文書スタイル) stored in the file, if it could be read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<crate::layout::PageSetup>,
 }
 
 impl Document {
@@ -230,6 +497,7 @@ impl Document {
             }],
             objects: Vec::new(),
             warnings: Vec::new(),
+            page: None,
         }
     }
 
@@ -345,6 +613,11 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
         .map(|e| e.display_path())
         .collect();
 
+    let page = cfb
+        .read("/DocumentViewStyles")
+        .and_then(|b| crate::page::parse(&b))
+        .map(|p| p.setup());
+
     Ok(Document {
         format,
         summary,
@@ -352,6 +625,7 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
         sheets,
         objects,
         warnings,
+        page,
     })
 }
 
@@ -434,6 +708,10 @@ struct Builder<'a> {
     /// Alignment of the current paragraph when a line header inside it
     /// changed `align` for the paragraphs that follow.
     para_align: Option<Align>,
+    indent: Option<Indent>,
+    feed: Option<LineFeed>,
+    /// Like `para_align`, for indents and line feed.
+    para_fmt: Option<(Option<Indent>, Option<LineFeed>)>,
     t: Track,
 }
 
@@ -491,6 +769,11 @@ impl<'a> Builder<'a> {
         }
         let mut p = std::mem::take(&mut self.para);
         p.align = self.para_align.take().unwrap_or(self.align);
+        (p.indent, p.feed) = self.para_fmt.take().unwrap_or((self.indent, self.feed));
+        if self.row.is_some() {
+            // the line header belongs to the row (see Row::feed)
+            (p.indent, p.feed) = (None, None);
+        }
         let mut src = None;
         if self.t.on {
             let t = &mut self.t;
@@ -563,10 +846,14 @@ fn push_table(blocks: &mut Vec<Block>, t: Table) {
     if t.rows.iter().all(|r| r.cells.len() <= 1) {
         for r in t.rows {
             let row_src = r.src.get().cloned();
+            let feed = r.feed;
             for c in r.cells {
                 if c.paragraphs.is_empty() {
                     // an empty line of the box still takes a line
-                    let mut p = Paragraph::default();
+                    let mut p = Paragraph {
+                        feed,
+                        ..Paragraph::default()
+                    };
                     if let (Some(rs), Some(cs)) = (&row_src, c.src.get()) {
                         p.src = Src(Some(Box::new(ParaSrc {
                             start: rs.header.0,
@@ -581,7 +868,8 @@ fn push_table(blocks: &mut Vec<Block>, t: Table) {
                     }
                     blocks.push(Block::Paragraph(p));
                 }
-                for p in c.paragraphs {
+                for mut p in c.paragraphs {
+                    p.feed = feed;
                     blocks.push(Block::Paragraph(p));
                 }
             }
@@ -616,6 +904,9 @@ fn build_blocks(
         row: None,
         page_break: false,
         para_align: None,
+        indent: None,
+        feed: None,
+        para_fmt: None,
         t: Track {
             on: track,
             ..Track::default()
@@ -657,8 +948,13 @@ fn build_blocks(
                 let mut align = Align::Left;
                 let mut row_spec: Option<u16> = None;
                 let mut rules = Vec::new();
+                let mut x0 = 0u16;
+                let (mut indent, mut feed) = (None, None);
+                let mut kinds = Vec::new();
                 for (tag, v) in &tlv {
                     match *tag {
+                        0x20 => feed = LineFeed::from_tlv(v),
+                        0x26 => indent = Indent::from_tlv(v),
                         0x24 => {
                             align = match v.first().copied().unwrap_or(0) {
                                 0 => Align::Left,
@@ -669,7 +965,10 @@ fn build_blocks(
                         }
                         0x8f => {
                             row_spec = v.first().copied();
-                            rules = parse_rules(v);
+                            (x0, rules) = parse_rules(v);
+                            if let Some(at) = tlv_value_at(payload, 0x8f) {
+                                kinds = rule_kinds(b.map, start as usize + 3 + at, v.len());
+                            }
                         }
                         _ => {}
                     }
@@ -680,7 +979,11 @@ fn build_blocks(
                     if b.para_align.is_none() {
                         b.para_align = Some(b.align);
                     }
+                    if b.para_fmt.is_none() {
+                        b.para_fmt = Some((b.indent, b.feed));
+                    }
                     b.align = align;
+                    (b.indent, b.feed) = (indent, feed);
                     if track {
                         b.t.eff = Some((start, end - start));
                     }
@@ -693,7 +996,10 @@ fn build_blocks(
                     t.width = t.width.max(width);
                     b.row = Some(Row {
                         cells: Vec::new(),
+                        x0,
                         rules,
+                        feed,
+                        kinds,
                         src: if track {
                             Src(Some(Box::new(RowSrc {
                                 header: (start, end - start),
@@ -707,6 +1013,7 @@ fn build_blocks(
                     b.close_table();
                 }
                 b.align = align;
+                (b.indent, b.feed) = (indent, feed);
                 if track {
                     if b.t.chars.is_empty() {
                         b.t.heads.push((start, end - start));

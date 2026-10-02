@@ -74,13 +74,48 @@ without Ichitaro.
   across a ruled cell, a line break inside ruby, a new table inside a ruled area).
 - Editor: Ctrl+S saves as jtd. PDF looks like the screen and has a searchable, copyable text layer.
 
+### 2026-10-02: checked in the latest 一太郎, horizontal rules decoded
+
+- **The latest 一太郎 runs under Wine** (`tools/taro2026/`). All 274 files saved by the editor open in it.
+- New tables opened but could not be selected. Rule widths and table widths now follow Ichitaro's own files.
+- **一太郎 made the paired samples.** Its macro feature (statement run and `RunFileMacro`) runs "write five
+  lines, draw rules from here to there, save" by itself: 34 samples so far.
+- **Horizontal rules found**: they are in the same `008F` items as the vertical rules. Items are always
+  4 words `(style, length, horizontal, distance)`, and style bits mean "upper half of a vertical rule,
+  lower half, a line through the middle of the line, a line under the line". A table's top edge belongs
+  to the line above it. 2,340 of 2,369 ruled lines in the public files fit. Details in
+  `docs/spec/JTD-FORMAT.md` §4.3.
+- When rule records carry the look of the character next to them, 一太郎 draws the rules faint and skips the
+  horizontal ones. With the values set to 0 they draw correctly.
+- The editor now draws horizontal rules as in the original, and a new table is saved with its top,
+  bottom and row lines.
+
+### 2026-10-02 (later): page setup, indents, line feed, rule line types
+
+- More paired samples from 一太郎's macros, one setting changed each (paper, margins, characters
+  and lines: 16; indents and line feed: 18). `tools/taro2026/samples/page.py`, `para.py`.
+- **The page setup is in `/DocumentViewStyles`.** Only settings that differ from the defaults are
+  stored, as a mask byte followed by values. Paper width and height, the four margins, characters per
+  line, lines per page and the base character size are read now, for all 95 public files (9 are
+  landscape A4, one form has 90 字 per line). The editor's pages, ruler and Word export follow them.
+- **Indents (TLV `0026`) and line feed (TLV `0020`) decoded** and drawn. Saving keeps them, and
+  the latest 一太郎 shows a line header the engine wrote the same way as one it made itself.
+- **Rule line types** are style properties on the units of the rule items (1 and 2: upper and lower
+  half of a vertical rule, 3: the line through the middle, 8: the line under the line). All 16 types
+  were made in 一太郎 and compared; thick, dotted, double and the rest are drawn. A row added to a
+  table keeps its line types.
+- The ruled lines that did not fit are explained: when the third word `b` of an item carries a rule
+  class (0x10 / 0x20), it is a vertical rule at the end of the item's own line. Counted again, all
+  2,369 ruled lines in the public files add up.
+- Details in `docs/spec/JTD-FORMAT.md` §4.1, §4.3 and §10.
+
 ## 4. Stages
 
 | Stage | Goal | Main work | Done when |
 |---|---|---|---|
 | **0. Engine v0.1** ✅ | Read | Container, block store, text, tables, some formatting | All public samples open |
 | **1-a. Editor v0.2** ✅ | Ichitaro-style editor of our own | Editing engine, 字×行 layout, canvas screen, IME, docx export (`docs/EDITOR.en.md`) | Typing, tables, formatting and saving work |
-| **1-b. Display v0.3** | Close to the original look | Horizontal rules, indents and line spacing, paper and margins, fonts, headers and footnotes, vertical writing | No big differences next to the sample PDFs |
+| **1-b. Display v0.3** | Close to the original look | ~~Horizontal rules~~, ~~rule line types~~, ~~indents and line feed~~, ~~paper, margins, characters and lines~~ (done), fonts, headers and footnotes, vertical writing | No big differences next to the sample PDFs |
 | **2. Convert v0.3** | Into open formats | docx and PDF export, `.jttc` decompression, multiple sheets | Tables and formatting survive in Word |
 | **3. Mac app and web** | Real users | Browser viewer (WASM), Mac app (including Finder Quick Look) | Double-clicking a jtd on a Mac opens it |
 | **4. Editing v0.5** | Fix documents | Edit text → save as docx/HTML; unknown bytes kept as they were | Open → edit → save as Word |
@@ -103,11 +138,9 @@ without Ichitaro.
 
 ## 6. Help wanted
 
-1. **Checking in the real Ichitaro**: open saved jtd files in Ichitaro (or its trial). The viewer
-   has been checked; the full program has not.
-2. **Paired samples**: with one Windows PC that has Ichitaro (or the trial), pairs such as "the
-   same document saved twice with one character changed" would quickly solve horizontal rules,
-   margins and indents. The list is in `docs/research/paired-samples.en.md`.
+1. ~~Checking in the real Ichitaro~~: done with the latest 一太郎 (`docs/research/ichitaro-latest.md`).
+2. **Paired samples**: horizontal rules, page setup, indents, line feed and line types were solved
+   this way. Headers and footers, columns and vertical writing can be made the same way. The list is in `docs/research/paired-samples.en.md`.
 3. ~~Public repository~~: done, `github.com/ezpzfile/ezpzfile-jtd`.
 4. **Spreading the word**: introduce it to Japanese developer communities (Qiita, Zenn, X) as
    "open jtd files on a Mac".

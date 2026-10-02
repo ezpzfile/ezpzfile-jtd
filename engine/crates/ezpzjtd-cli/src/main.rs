@@ -47,7 +47,7 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
         "docx" => {
             let d = ezpzjtd_core::open(bytes)?;
             let out_path = arg.ok_or("missing output path")?;
-            let setup = ezpzjtd_core::layout::PageSetup::default();
+            let setup = d.page.clone().unwrap_or_default();
             std::fs::write(out_path, ezpzjtd_core::docx::to_docx(&d, None, &setup))?;
         }
         "experiment" => experiment(bytes, arg.ok_or("missing output folder")?)?,
@@ -60,6 +60,21 @@ fn run(cmd: &str, file: &str, arg: Option<&str>) -> Result<(), Box<dyn std::erro
             let d = ezpzjtd_core::open(bytes)?;
             writeln!(out, "{}", serde_json::to_string_pretty(&d.summary)?)?;
             writeln!(out, "format\t{}", d.format)?;
+            if let Some(p) = &d.page {
+                writeln!(
+                    out,
+                    "page\t{} x {} mm\tmargins {} {} {} {} mm (top bottom left right)\t{} 字 x {} 行\t{} pt",
+                    p.width_mm,
+                    p.height_mm,
+                    p.margin_top_mm,
+                    p.margin_bottom_mm,
+                    p.margin_left_mm,
+                    p.margin_right_mm,
+                    p.chars_per_line,
+                    p.lines_per_page,
+                    p.font_pt
+                )?;
+            }
             writeln!(
                 out,
                 "fonts\t{}",
@@ -231,7 +246,8 @@ fn experiment(bytes: Vec<u8>, outdir: &str) -> Result<(), Box<dyn std::error::Er
         cfbw::write(&tree),
         "same streams, rewritten by our CFB writer",
     )?;
-    let same = ezpzjtd_core::ssmg::substreams(&tv.encode())? == ezpzjtd_core::ssmg::substreams(&raw)?;
+    let same =
+        ezpzjtd_core::ssmg::substreams(&tv.encode())? == ezpzjtd_core::ssmg::substreams(&raw)?;
     let mut t2 = tree.clone();
     t2.set_stream("/DocumentText", tv.encode());
     put(

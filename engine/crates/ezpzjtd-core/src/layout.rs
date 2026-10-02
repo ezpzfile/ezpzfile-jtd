@@ -7,20 +7,30 @@
 //!
 //! All coordinates are in points (1/72 inch), relative to the page's top-left.
 
-use crate::doc::{Align, Block, Paragraph, Table};
+use crate::doc::{Align, Block, LineFeed, Paragraph, Table};
 use crate::style::CharStyle;
 use serde::Serialize;
 
-/// Page geometry. Defaults to Ichitaro's A4 portrait, 40 字 × 36 行, 10.5 pt.
+/// Page geometry. Documents bring their own (文書スタイル, see `page.rs`);
+/// new documents use the latest Ichitaro's default: A4 portrait, margins 30 mm,
+/// 40 字 × 40 行, 10.5 pt.
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 pub struct PageSetup {
     pub width_mm: f32,
     pub height_mm: f32,
     pub margin_top_mm: f32,
     pub margin_bottom_mm: f32,
+    #[serde(default = "thirty")]
+    pub margin_left_mm: f32,
+    #[serde(default = "thirty")]
+    pub margin_right_mm: f32,
     pub chars_per_line: u32,
     pub lines_per_page: u32,
     pub font_pt: f32,
+}
+
+fn thirty() -> f32 {
+    30.0
 }
 
 impl Default for PageSetup {
@@ -28,16 +38,34 @@ impl Default for PageSetup {
         PageSetup {
             width_mm: 210.0,
             height_mm: 297.0,
-            margin_top_mm: 35.0,
+            margin_top_mm: 30.0,
             margin_bottom_mm: 30.0,
+            margin_left_mm: 30.0,
+            margin_right_mm: 30.0,
             chars_per_line: 40,
-            lines_per_page: 36,
+            lines_per_page: 40,
             font_pt: 10.5,
         }
     }
 }
 
 pub const MM: f32 = 72.0 / 25.4;
+
+fn is_plain_kind(k: &u8) -> bool {
+    *k <= 1
+}
+
+/// Stroke width (points) of a ruled line of Ichitaro line type `k` (線種),
+/// as the latest 一太郎 draws them: types 2, 5, 9, 11, 13 are medium, 3 and 6
+/// thick, 16 a hairline.
+pub fn line_width(k: u8) -> f32 {
+    match k {
+        2 | 5 | 9 | 11 | 13 => 1.3,
+        3 | 6 | 15 => 2.0,
+        16 => 0.4,
+        _ => 0.7,
+    }
+}
 
 impl PageSetup {
     pub fn page_w(&self) -> f32 {
@@ -46,11 +74,34 @@ impl PageSetup {
     pub fn page_h(&self) -> f32 {
         self.height_mm * MM
     }
+    /// Width between the left and right margins.
     pub fn text_w(&self) -> f32 {
-        self.chars_per_line as f32 * self.font_pt
+        let w = self.page_w() - (self.margin_left_mm + self.margin_right_mm) * MM;
+        if w > self.font_pt * 2.0 {
+            w
+        } else {
+            self.chars_per_line as f32 * self.font_pt
+        }
     }
     pub fn left(&self) -> f32 {
-        ((self.page_w() - self.text_w()) / 2.0).max(10.0)
+        let w = self.page_w() - (self.margin_left_mm + self.margin_right_mm) * MM;
+        if w > self.font_pt * 2.0 {
+            self.margin_left_mm * MM
+        } else {
+            ((self.page_w() - self.text_w()) / 2.0).max(10.0)
+        }
+    }
+    /// One character cell: the text width split into `chars_per_line`
+    /// cells. Ichitaro spreads the characters over the line this way
+    /// (字間 = cell − character size).
+    pub fn cell(&self) -> f32 {
+        self.text_w() / self.chars_per_line.max(1) as f32
+    }
+    /// Horizontal scale from character size to advance (1 + 字間). When the
+    /// document asks for more characters than fit, Ichitaro places them at
+    /// the narrower cell pitch too (seen with 90 字 on landscape A4).
+    pub fn spread(&self) -> f32 {
+        (self.cell() / self.font_pt).clamp(0.5, 4.0)
     }
     pub fn top(&self) -> f32 {
         self.margin_top_mm * MM
@@ -62,9 +113,9 @@ impl PageSetup {
     pub fn pitch(&self) -> f32 {
         (self.bottom() - self.top()) / self.lines_per_page.max(1) as f32
     }
-    /// One table-grid unit. Ichitaro tables are 4 units per character.
+    /// One table-grid unit. Ichitaro tables are 4 units per character cell.
     pub fn unit(&self) -> f32 {
-        self.font_pt / 4.0
+        self.cell() / 4.0
     }
 }
 
@@ -96,6 +147,11 @@ pub enum Item {
         w: f32,
         #[serde(skip_serializing_if = "Option::is_none")]
         color: Option<String>,
+        /// Ichitaro line type (線種) for ruled lines: 0/1 solid, 2-3 thicker,
+        /// 4-6 dashed, 7 double, 8 dotted, 9 dashed, 10-11 dot-dash,
+        /// 12-14 wavy, 15 hatched, 16 light. See `line_width`.
+        #[serde(skip_serializing_if = "is_plain_kind")]
+        k: u8,
     },
     /// Editing marks (編集記号): "ret" paragraph end, "sp" full-width space,
     /// "pb" page break, "tab".
@@ -190,14 +246,14 @@ impl<'a> Ctx<'a> {
     }
 }
 
-fn glyphs(p: &Paragraph, base: f32, pre: Option<(usize, &str)>) -> Vec<G> {
+fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> Vec<G> {
     let mut out = Vec::new();
     let mut off = 0usize;
     let push_pre = |out: &mut Vec<G>, style: &CharStyle, txt: &str| {
         let mut st = style.clone();
         st.underline = Some(1);
         for ch in txt.chars() {
-            let size = st.size_pt.unwrap_or(base);
+            let size = st.size_pt.unwrap_or(base) * spread;
             out.push(G {
                 ch,
                 w: if is_half(ch) { size / 2.0 } else { size },
@@ -215,7 +271,7 @@ fn glyphs(p: &Paragraph, base: f32, pre: Option<(usize, &str)>) -> Vec<G> {
                     push_pre(&mut out, &r.style, txt);
                 }
             }
-            let size = r.style.size_pt.unwrap_or(base);
+            let size = r.style.size_pt.unwrap_or(base) * spread;
             let w = if ch == '\t' {
                 size * 4.0
             } else if is_half(ch) {
@@ -239,6 +295,26 @@ fn glyphs(p: &Paragraph, base: f32, pre: Option<(usize, &str)>) -> Vec<G> {
             let st = p.runs.last().map(|r| r.style.clone()).unwrap_or_default();
             push_pre(&mut out, &st, txt);
         }
+    }
+    out
+}
+
+/// Break glyphs into lines: the first line fits `first`, the rest `width`.
+fn break_lines_2(gs: &[G], first: f32, width: f32) -> Vec<(usize, usize)> {
+    if (first - width).abs() < 0.01 {
+        return break_lines(gs, width);
+    }
+    let head = break_lines(gs, first);
+    let Some(&(_, e)) = head.first() else {
+        return head;
+    };
+    let mut out = vec![(0, e)];
+    if e < gs.len() {
+        out.extend(
+            break_lines(&gs[e..], width)
+                .into_iter()
+                .map(|(a, b)| (a + e, b + e)),
+        );
     }
     out
 }
@@ -278,7 +354,9 @@ fn break_lines(gs: &[G], width: f32) -> Vec<(usize, usize)> {
     lines
 }
 
-/// Lay out one paragraph inside [left, right]. `para` is the flat index.
+/// Lay out one paragraph inside [left, right]. `para` is the flat index;
+/// `row_feed` is the line feed of the table row the paragraph is in.
+#[allow(clippy::too_many_arguments)]
 fn layout_para(
     ctx: &mut Ctx,
     p: &Paragraph,
@@ -287,19 +365,27 @@ fn layout_para(
     right: f32,
     pre: Option<&Preedit>,
     in_cell: bool,
+    row_feed: Option<LineFeed>,
 ) -> f32 {
     let setup = ctx.setup;
     let base = setup.font_pt;
     let pitch = setup.pitch();
     let pre_here = pre.filter(|x| x.para == para).map(|x| (x.off, x.text));
-    let gs = glyphs(p, base, pre_here);
+    let gs = glyphs(p, base, setup.spread(), pre_here);
+    // indents: the first line has its own left and right (from the margins)
+    let (outer_l, outer_r) = (left, right);
+    let [il, ir, fl, fr] = p.indent.map(|i| i.points(setup.cell())).unwrap_or_default();
+    let first = (outer_l + fl, (outer_r - fr).max(outer_l + fl + base));
+    let (left, right) = (outer_l + il, (outer_r - ir).max(outer_l + il + base));
     let width = (right - left).max(base);
-    let ranges = break_lines(&gs, width);
+    let ranges = break_lines_2(&gs, (first.1 - first.0).max(base), width);
     let mut used = 0.0;
     let nlines = ranges.len();
     let mut model_pos = 0usize;
     for (li, &(a, b)) in ranges.iter().enumerate() {
         let line = &gs[a..b];
+        let (left, right) = if li == 0 { first } else { (left, right) };
+        let width = (right - left).max(base);
         let max_size = line
             .iter()
             .map(|g| g.style.size_pt.unwrap_or(base))
@@ -413,6 +499,7 @@ fn layout_para(
                     } else {
                         st.color.clone()
                     },
+                    k: 0,
                 });
             }
             k = j;
@@ -463,8 +550,14 @@ fn layout_para(
                 size: base,
             });
         }
-        ctx.y += h;
-        used += h;
+        // 改行幅: the paragraph's own feed after each of its lines
+        let adv = p
+            .feed
+            .or(row_feed)
+            .and_then(|f| f.points(pitch))
+            .unwrap_or(h);
+        ctx.y += adv;
+        used += adv;
     }
     used
 }
@@ -503,15 +596,13 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
         )
         .max(1);
     let mut unit = setup.unit();
-    if width_units as f32 * unit > setup.text_w() + setup.font_pt * 2.0 {
-        unit = (setup.text_w() + setup.font_pt * 2.0) / width_units as f32;
+    if width_units as f32 * unit > setup.text_w() + setup.cell() * 2.0 {
+        unit = (setup.text_w() + setup.cell() * 2.0) / width_units as f32;
     }
     let xu = |u: u16| left + u as f32 * unit;
     let pad = unit * 1.5;
     let line_c = Some("#222".to_string());
-    let soft_c = Some("#c9c9c9".to_string());
-    let nrows = t.rows.len();
-    for (ri, row) in t.rows.iter().enumerate() {
+    for row in &t.rows {
         let spans = snapped_row(
             &row.cells
                 .iter()
@@ -544,12 +635,18 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                     xu(r) - pad,
                     pre,
                     true,
+                    row.feed,
                 );
             }
             heights.push(h);
             *flat_start += c.paragraphs.len();
         }
-        let row_h = heights.iter().cloned().fold(setup.pitch(), f32::max);
+        // the row's own line feed (改行幅), else one line
+        let one = row
+            .feed
+            .and_then(|f| f.points(setup.pitch()))
+            .unwrap_or(setup.pitch());
+        let row_h = heights.iter().cloned().fold(one, f32::max);
         if ctx.y + row_h > setup.bottom() + 0.5 && ctx.y > setup.top() + 0.5 {
             ctx.new_page();
         }
@@ -568,56 +665,46 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                     xu(r) - pad,
                     pre,
                     true,
+                    row.feed,
                 );
             }
             *flat_start += c.paragraphs.len();
         }
         let bottom = top + row_h;
-        if row.ruled() {
-            let prev_ruled = ri > 0 && t.rows[ri - 1].ruled();
-            let next_ruled = ri + 1 < nrows && t.rows[ri + 1].ruled();
-            let x_first = spans.first().map(|s| xu(s.0)).unwrap_or(left);
-            let x_last = spans.last().map(|s| xu(s.1)).unwrap_or(left);
-            for &(l, _) in &spans {
-                ctx.items().push(Item::Line {
-                    x1: xu(l),
-                    y1: top,
-                    x2: xu(l),
-                    y2: bottom,
-                    w: 0.7,
-                    color: line_c.clone(),
-                });
+        let mid = (top + bottom) / 2.0;
+        let g = row.lines();
+        let line = |x1: f32, y1: f32, x2: f32, y2: f32, k: u8| Item::Line {
+            x1,
+            y1,
+            x2,
+            y2,
+            w: line_width(k),
+            color: if k == 16 {
+                Some("#888".to_string())
+            } else {
+                line_c.clone()
+            },
+            k,
+        };
+        for (i, &(x, up, down)) in g.verticals.iter().enumerate() {
+            let (ku, kd) = g.vertical_kinds.get(i).copied().unwrap_or_default();
+            if up && down && ku != kd {
+                // the two halves have their own types
+                ctx.items().push(line(xu(x), top, xu(x), mid, ku));
+                ctx.items().push(line(xu(x), mid, xu(x), bottom, kd));
+            } else {
+                let (y1, y2) = (if up { top } else { mid }, if down { bottom } else { mid });
+                ctx.items()
+                    .push(line(xu(x), y1, xu(x), y2, if up { ku } else { kd }));
             }
-            ctx.items().push(Item::Line {
-                x1: x_last,
-                y1: top,
-                x2: x_last,
-                y2: bottom,
-                w: 0.7,
-                color: line_c.clone(),
-            });
-            ctx.items().push(Item::Line {
-                x1: x_first,
-                y1: top,
-                x2: x_last,
-                y2: top,
-                w: if prev_ruled { 0.4 } else { 0.7 },
-                color: if prev_ruled {
-                    soft_c.clone()
-                } else {
-                    line_c.clone()
-                },
-            });
-            if !next_ruled {
-                ctx.items().push(Item::Line {
-                    x1: x_first,
-                    y1: bottom,
-                    x2: x_last,
-                    y2: bottom,
-                    w: 0.7,
-                    color: line_c.clone(),
-                });
-            }
+        }
+        for (i, &(x1, x2)) in g.below.iter().enumerate() {
+            let k = g.below_kinds.get(i).copied().unwrap_or(0);
+            ctx.items().push(line(xu(x1), bottom, xu(x2), bottom, k));
+        }
+        for (i, &(x1, x2)) in g.middle.iter().enumerate() {
+            let k = g.middle_kinds.get(i).copied().unwrap_or(0);
+            ctx.items().push(line(xu(x1), mid, xu(x2), mid, k));
         }
         ctx.y = bottom;
     }
@@ -664,6 +751,7 @@ pub fn layout(
                     setup.left() + setup.text_w(),
                     pre,
                     false,
+                    None,
                 );
                 flat += 1;
             }

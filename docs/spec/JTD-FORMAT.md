@@ -1,6 +1,6 @@
 # Ichitaro document format (`.jtd`): working specification
 
-Status: **draft, reverse-engineered**. Last updated 2026-10-01.
+Status: **draft, reverse-engineered**. Last updated 2026-10-02.
 
 This document describes what EZPZ File JTD knows about JustSystems Ichitaro
 (一太郎) documents. Nothing here comes from JustSystems. Everything was
@@ -14,6 +14,7 @@ learned by reading public files, and every claim carries a confidence tag:
 | **candidate** | A pattern that fits most data; may be wrong |
 | **unknown** | Seen, not understood. Preserve the bytes |
 | **viewer** | Checked by opening files we changed in JustSystems' own 一太郎ビューア 2022 (see `tools/taroview/`) |
+| **ichitaro** | Checked with the latest 一太郎 itself (under Wine): either a paired sample it wrote from a macro, or a file we wrote opened in it (see `docs/research/ichitaro-latest.md`) |
 
 Corpus: 95 public Ichitaro files published by MEXT, 83 of them with a Word
 twin exported by the publisher from the same source (`corpus/manifest.tsv`).
@@ -83,6 +84,10 @@ of each laid-out **line**, in order (paragraph wraps included).
 `/PaperMark` and `/DocumentTextPositionTables` (only 13 of 95 files) also
 index the text by position. Ichitaro Viewer opens files with these caches
 stale or removed, and lays the document out again. **viewer**
+
+The page setup itself (paper, margins, 字数 × 行数) is not in these caches
+and not in `/PageLayoutStyle` (the latest 一太郎 does not write that stream): it is
+in `/DocumentViewStyles` (§10). **ichitaro**
 
 Compressed variants (`.jttc`) keep the real document inside
 `/JSCompDocument` as an LHA `-lh5-` member (see OpenJTD RFC 0005). *Not yet
@@ -199,56 +204,132 @@ first TLV items of particular records.
 |---|---|---|---|
 | `0024` | 1 | **alignment**: 0 left, 1 center, 2 right | strong. Word twins: value 1 → centered 3 489 chars vs 153 left; value 2 → right 546 vs 21 center. Remaining chars have no explicit alignment in Word |
 | `008F` | var | **ruled line**: vertical rules and cell grid (§4.3) | observed |
-| `0020` | 4 | line spacing? `(mode, value, mode, value)`, values like 700 = 7.00 mm | candidate |
-| `0026` | 5 | indents? `(flag, left, 0, first, 0)`, values in 1/100 mm | candidate |
+| `0020` | 4 | **line feed** (改行幅) after each line of the paragraph: `(kind, value, kind2, value2)`, see below. Older versions repeat the pair; the latest 一太郎 writes `(kind, value, 0, 0)`; `FF` in `kind2` also seen. On a ruled line's header it is the feed of that line (the whole row) | ichitaro |
+| `0026` | 5 | **indents** (インデント): `(unit, left, right, first-line left, first-line right)`; unit `0` = half-width columns, `1` = 1/100 mm. The first-line values are measured from the margins, not from `left` (a hanging indent of left 4, first line 2 is stored `0,4,0,2,0`). All zero = none | ichitaro |
 | `002E` | 1 | single-column marker | unknown |
 | `002A`, `0017` | var | unknown | unknown |
+
+Line feed kinds, from paired samples made with `LineSpacing()` and checked on
+screen (the feed is the distance from a line to the next one, so `1/2` makes
+the next line overlap; the line before the paragraph keeps the normal feed):
+
+| `kind` | Feed | `kind` | Feed |
+|---|---|---|---|
+| 1 | 0 | 6 | 3/4 |
+| 2 | 1/2 | 7 | ruby (ルビ) |
+| 3 | 1/3 | 8 | `value` in 1/100 mm (500 = 5 mm) |
+| 4 | 1/4 | 9 | `value` in 0.1 % of the normal feed (1500 = 150 %) |
+| 5 | 2/3 | | |
+
+**ichitaro** (all kinds; 1/2, 5 mm, 40 % and 150 % measured on screen)
+
+A line header we write with these tags (indent on one paragraph, 1/2 feed on
+the next) is drawn by the latest 一太郎 as one made in it. **ichitaro**
 
 ### 4.2 Units
 
 Lengths in style and paragraph data are in **1/100 mm** (see §5, font
 size). Table grid coordinates use a different unit (§4.3).
 
-### 4.3 Ruled lines (罫線) **new: item grammar**
+### 4.3 Ruled lines (罫線) **new: item grammar, horizontal rules**
 
 Ichitaro draws tables with rules on a character grid. Every text line inside
-a ruled area starts with a class `0010` record whose `008F` item describes the
-vertical rules of that line, followed by one class `0030` record per cell.
+a ruled area starts with a class `0010` record whose `008F` item describes
+**all** the rules of that line (vertical and horizontal), followed by one
+class `0030` record per cell.
 
-`008F` values: `width, 0, x0`, then items:
+`008F` values: `width, 0, x0`, then items of **4 words**
+`(style, a, b, dist)`; the last item may be cut to 2 words `(style, dist)`.
+**ichitaro** (all 2,369 ruled lines in the corpus add up under this grammar;
+so does every line in the paired samples)
 
-- style `< 0x10`: 2 words `(style, distance)`: a gap, **no line drawn**
-- style `≥ 0x10`: 4 words `(style, a, b, distance)`: a vertical rule
-- the last item may be cut to 2 words
+Positions are rule centres in grid units: the first item sits at `x0 + 1`,
+and each item is `a + dist + 2` units after the one before (a cut last item:
+`dist + 1`). The line adds up to `width`. A half-width rule (`0x10` class)
+covers `centre ± 1`, a full-width one (`0x20` class) `centre ± 2` and takes
+the place of one full-width character. Cells (`0030`) run between rules:
+for a half-width rule at centre `c` the next cell starts at `c + 1`.
+**ichitaro**
 
-Seen rule styles: `13` (most common), `1B`, `23`, `2B`, `14`, `16`, `24`, `26`.
-`0x08` set in the style appears with dashed rules in the reference renderings
-(candidate). A line whose items are all `< 0x10` has no rules. This is how
-ordinary text above a form is stored. **observed**
+`style` bits:
 
-Cell records `0030`: `0000 left right flags 0000`. Cells are ordered left to
-right with a gap of a few grid units between them for the rule itself. Grid
-width is the `008F` width (e.g. 160 or 168). **observed**
+| Bits | Meaning |
+|---|---|
+| `0x10` / `0x20` | half-width / full-width vertical rule (0 when the item has no vertical rule) |
+| `0x01` | vertical rule over the upper half of the line |
+| `0x02` | vertical rule over the lower half of the line (`0x03` = whole line) |
+| `0x04` | a horizontal rule **through the middle** of the line starts here |
+| `0x08` | a horizontal rule **under** the line (in the gap below it) starts here |
 
-Geometry of a ruled line, as Ichitaro's own files store it: `x0` is the space
-before the first rule (when it is not 0, a cell record `0..x0` holds the text
-there); every rule is **2 grid units** wide; each item's distance is the width
-of the cell after that rule, so a cell runs from `rule + 2` to the next rule;
-and `x0 + Σ(2 + distance) + 2` equals the `008F` width when the last item is
-cut to `(style, 0)` (1,119 of 1,125 such lines in the corpus that have no gap
-items; lines with gap items count differently and are not understood yet).
-A new table must keep these sums and use the document's own grid width (the
-most common `008F` width in the file, 160 for a plain A4 page of 40 字).
-**strong**
+`a` is the length of a horizontal rule that does not run to the next item
+(it is drawn from this item's centre to `centre + a + 1`); `b` describes the
+horizontal rule from this item to the next one: `8` under the line, class
+plus `4` (`0x14`, `0x24`) through the middle, `0x1C` both. **ichitaro**
 
-Horizontal rules are **not** in these records. Where they live (candidates:
-`LineMark`, `TextLayoutStyle`, the `0020` / `002A` items) is open.
+Examples from the paired samples (half-width rules, 40 字 page, width `A0`):
+
+```
+a box over lines 2-3, 10 half-width columns wide, line rules (行間)
+  line 1  A0,0,0, 8,13,0,8A            top edge: under line 1, from 1 to 20
+  line 2  A0,0,0, 1B,0,8,12, 13,0,0,89  rules at 1 and 21, a line under the cell
+  line 3  A0,0,0, 1B,0,8,12, 13,0,0,89
+a box over lines 1-3 with rules through the middle of lines (通常)
+  line 1  A0,0,0, 16,0,14,12, 12,0,0,89  ┌ and ┐: lower halves, middle line
+  line 2  A0,0,0, 17,0,14,12, 13,0,0,89  ├ and ┤
+  line 3  A0,0,0, 15,0,14,12, 11,0,0,89  └ and ┘: upper halves, middle line
+```
+
+So **the top edge of a table drawn with line rules is stored on the text line
+above it**, as a line under that line. A table at the very top of a sheet
+needs a line above it for that. **ichitaro**
+
+**Line types** (線種) are not in the `008F` values: they are character style
+properties (§5) on the units of the items. The meaning of the property ids is
+different on these units:
+
+| Property | On the item's 1st word (`style`) | On its 3rd word (`b`) |
+|---|---|---|
+| 1 | type of the vertical rule's upper half | |
+| 2 | type of the vertical rule's lower half | |
+| 3 | type of the item's own line through the middle | type of the middle line to the next item |
+| 8 | type of the item's own line under the line | type of the line under, to the next item |
+
+`FFFF` (1, 3, 8) and `0` (2) mean type 1, the default. **ichitaro** (paired
+samples with all 16 types; the dashed 機関番号 box and thick group lines of a
+public form show the same way in the latest 一太郎)
+
+The 16 types as the latest 一太郎 draws them: 1 thin, 2 medium, 3 thick, 4-6 dashed
+(thin, medium, thick), 7 double, 8 dotted, 9 long dashes, 10-11 dot-dash,
+12-13 wavy, 14 double wavy, 15 hatched, 16 hairline. Corpus: types 2, 3, 4 and
+7 are common.
+
+A ruled line copied for a new row keeps the style states of its units, and
+so its line types. **ichitaro**
+
+The rule records themselves must carry a **plain record style**: the same
+style properties as the text around, all set to 0. Records that keep the look
+of a neighbouring character make Ichitaro draw their vertical rules faint and
+skip their horizontal rules. **ichitaro**
+
+Cell records `0030`: `0000 left right flags 0000`. A cell record also covers
+the space before the first rule (`0..x0` when `x0` is not 0) and after the
+last one. **observed**
 
 A one-cell line with no text (`0010` header, `0030` cell, `000E`, no
 `000A`) is an **empty line of the box**: it still takes a line and keeps the
 box's vertical rules. **viewer** A new line can be added to a box by copying
 a neighbouring line's header and cell records (Ichitaro Viewer draws the box
 one line taller). **viewer**
+
+When `b` carries a class (`0x10` / `0x20`, as in `(8, 3, 0x13, 0)` or
+`(0x14, 1, 0x16, 0)`), it is the style of **a vertical rule at the end of the
+item's own line**, at `centre + a + 1`; the next item follows at
+`centre + a + dist + 2` as usual. 343 corpus lines have such items (for
+example the right edge of a box whose last row ends in a horizontal rule);
+the line types of that rule are properties 1 and 2 on the `b` word.
+**observed** (every one of the 2,369 corpus lines adds up with the cut last
+item counted as `dist + 1`; the rules drawn this way close the boxes that
+Ichitaro shows closed)
 
 ### 4.4 Line headers inside a line **new**
 
@@ -322,16 +403,16 @@ user before they share a file. **confirmed**
 
 ## 8. Open questions (research backlog)
 
-1. Horizontal rules and cell borders (§4.3)
-2. Paragraph indents and line spacing units (TLV `0020`, `0026`)
-3. Page size and margins (`PaperMark`, `PageLayoutStyle`)
+1. ~~Horizontal rules and cell borders, line types~~ (see §4.3)
+2. ~~Paragraph indents and line spacing units (TLV `0020`, `0026`)~~ (see §4.1)
+3. ~~Page size and margins~~ (see §10); header and footer positions, 段組
 4. Font selector ids 3/8 → face names
 5. Properties 6-12, 14, 16-20
-6. Vertical writing (縦書き)
+6. Vertical writing (縦書き): the flag is known (§10), the layout is not done
 7. `/Header`, `/Footnote`, frames (`/Frame`, `LayoutBoxText`)
 8. `.jttc` (LHA) and pre-Ichitaro 8 files
 9. ~~Writing: what must change in the layout caches~~ (see §9)
-10. Full Ichitaro (not only the viewer) has not been tested with written files
+10. ~~Full Ichitaro (not only the viewer) has not been tested with written files~~ (see `docs/research/ichitaro-latest.md`)
 
 The fastest way to close these is **paired samples**: the same document saved
 twice from Ichitaro with one setting changed. See `docs/research/`.
@@ -369,3 +450,43 @@ written. On the corpus: random editing sessions save 96 % (text), 99 %
 rest are refused with a reason (joining lines across a ruled box, a line
 break inside ruby, a table inside a box). Saved files are opened in
 Ichitaro Viewer by `tools/taroview/`; results are in `experiments/results.md`.
+
+---
+
+## 10. Page setup (文書スタイル): `/DocumentViewStyles` **new**
+
+```
+00 01 00 02   10 00   <u32 length>   records…   (then other data, not read)
+record:       <u16 tag> <u16 length> <bytes>
+```
+
+Inside the first block, records `1001`-`1011` hold the document style. They
+store **only the settings that differ from Ichitaro's built-in defaults**:
+each group of fields starts with a **mask byte**, and the fields of the set
+bits follow in **ascending bit order**. All 95 corpus files have this shape.
+**ichitaro** (paired samples: one setting changed per file with
+`DocumentStyleMargin`, `DocumentStyleLayout`, `DocumentStylePaper`,
+`DocumentStyleFont`; the macro `GetDocumentStyle…` functions report the
+defaults)
+
+| Record | Group: bit (size) | Meaning | Default |
+|---|---|---|---|
+| `1001` | 1: bit 1 (u32), bit 2 (u32) | paper width, height, 1/100 mm (landscape stores the turned size); bits 3, 5, 6 are 1 byte, meaning unknown. The paper name follows in Shift_JIS (`A4 単票・縦方向`) | A4, 21000 × 29700 |
+| `1002` | 1: bits 4, 7 (u16) | unknown | |
+| | 2: bit 0 (u8); bits 3, 4, 5, 6 (u16) | margins top, bottom, left, right, 1/100 mm; bit 7 (u16, always 3000) unknown | 3000 each |
+| | 3: bit 4 (u8) | `1` = 縦組み (vertical writing); bit 6 = ten u16 (700) | |
+| `100B` | 1: bit 0 (u8), bit 1 (u16), bits 2 and 4 (u8), bit 6 (u8), bit 7 (u16) | bit 7: **characters per line in half-width columns** (80 = 40 字); bit 1: 行間 in 0.1 % of the character size | 80 |
+| `100D` | 1: bit 0 (u8), bit 1 (u16) | bit 1: **lines per page** | 40 |
+| `1006` | 1: bit 0 (u32) | **character size**, 1/100 mm (370 = 10.5 pt) | 370 |
+
+Ichitaro spreads the characters over the width between the margins: one
+character cell is `(paper width − left − right) / 字数`, and 字間 is the cell
+minus the character size (the ruler shows the cells). When 字数 is more than
+fits, characters are placed at the narrower cell too (seen with 90 字 on a
+landscape A4 form). The line pitch is `(paper height − top − bottom) / 行数`.
+**ichitaro**
+
+When the latest 一太郎 changes the paper or the character size it moves the left and
+right margins to keep 字数 (B5: 17.01 / 17.00 mm), or lowers 字数 by a half
+column (12 pt on A4: 79 half-width columns).
+

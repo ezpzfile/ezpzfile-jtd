@@ -48,6 +48,7 @@ version = "0.3.0"
 dependencies = [
  "encoding_rs",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

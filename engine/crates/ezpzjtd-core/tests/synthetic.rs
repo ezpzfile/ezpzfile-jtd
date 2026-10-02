@@ -189,3 +189,90 @@ fn local_corpus_opens() {
     }
     eprintln!("opened {n} corpus files");
 }
+
+/// Indents (TLV 0x26) and line feed (TLV 0x20) as the latest 一太郎 writes them
+/// (spec §4.1); a table row keeps the line feed of its line header.
+#[test]
+fn indents_and_line_feed() {
+    use ezpzjtd_core::doc::{Indent, LineFeed};
+    let mut u = s("一");
+    u.push(0x0a);
+    // left 4 half-width columns, first line 2 (a hanging indent)
+    u.extend(para_rec(&[(0x26, &[0, 4, 0, 2, 0])]));
+    u.extend(s("二"));
+    u.push(0x0a);
+    // 1/2 line feed, then 150 %
+    u.extend(para_rec(&[(0x20, &[2, 0, 0, 0])]));
+    u.extend(s("三"));
+    u.push(0x0a);
+    u.extend(para_rec(&[
+        (0x20, &[9, 1500, 0, 0]),
+        (0x26, &[1, 1000, 0, 1000, 0]),
+    ]));
+    u.extend(s("四"));
+    u.push(0x0a);
+    let rules: Vec<u16> = vec![0xa0, 0, 0, 0x13, 0, 0, 0x4c, 0x13, 0, 0, 0x4c, 0x13, 0];
+    let cell = |l: u16, r: u16| vec![0x1c, 0x30, 12, 0, l, r, 0xff, 0, 12, 0, 0x30, 0x1f];
+    u.extend(para_rec(&[(0x20, &[2, 0, 2, 0]), (0x8f, &rules)]));
+    u.extend(cell(2, 0x4e));
+    u.extend(s("左"));
+    u.extend(cell(0x52, 0x9e));
+    u.extend(s("右"));
+    u.push(0x0e);
+    let raw = ssmg_text(&u, &[0xff]);
+    let blocks = blocks_from_document_text(&raw, &mut Vec::new()).unwrap();
+    let p = |i: usize| match &blocks[i] {
+        Block::Paragraph(p) => p.clone(),
+        b => panic!("{b:?}"),
+    };
+    assert_eq!((p(0).indent, p(0).feed), (None, None));
+    assert_eq!(
+        p(1).indent,
+        Some(Indent {
+            mm: false,
+            left: 4,
+            right: 0,
+            first_left: 2,
+            first_right: 0
+        })
+    );
+    assert_eq!(p(1).feed, None);
+    assert_eq!(p(2).feed, Some(LineFeed { kind: 2, value: 0 }));
+    assert_eq!(p(2).indent, None);
+    assert_eq!(p(3).feed.unwrap().points(20.0), Some(30.0));
+    let i = p(3).indent.unwrap();
+    assert!(i.mm && (i.points(10.0)[0] - 1000.0 * 72.0 / 2540.0).abs() < 0.01);
+    let Block::Table(t) = &blocks[4] else {
+        panic!("expected table")
+    };
+    assert_eq!(t.rows[0].feed, Some(LineFeed { kind: 2, value: 0 }));
+    assert_eq!(t.rows[0].cells[0].paragraphs[0].feed, None);
+}
+
+/// A `b` word with a rule class puts a vertical rule at the end of the
+/// item's own line (spec §4.3): the right edge of a box whose last row
+/// ends in a line under it.
+#[test]
+fn b_word_with_a_rule_class() {
+    use ezpzjtd_core::doc::{Row, Rule};
+    // corpus line: x0 0x0a, three ruled cells, then (8, 3, 0x13, 0), blank
+    let r = |style, a, b, dist| Rule { style, a, b, dist };
+    let row = Row {
+        x0: 0x0a,
+        rules: vec![
+            r(0x1b, 0, 8, 0x20),
+            r(0x1b, 0, 8, 0x24),
+            r(0x1b, 0, 8, 0x22),
+            r(8, 3, 0x13, 0),
+            r(0, 0, 0, 0x2b),
+        ],
+        ..Row::default()
+    };
+    let g = row.lines();
+    let xs: Vec<u16> = g.verticals.iter().map(|v| v.0).collect();
+    assert_eq!(xs, vec![11, 45, 83, 123]);
+    assert!(g.verticals[3].1 && g.verticals[3].2);
+    // the line under runs from the first rule to the last one
+    assert_eq!(g.below.first().unwrap().0, 11);
+    assert_eq!(g.below.iter().map(|s| s.1).max(), Some(123));
+}

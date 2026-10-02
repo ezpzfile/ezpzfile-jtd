@@ -65,6 +65,14 @@ fn same_content(a: &[Block], b: &[Block]) -> Result<(), String> {
         if x.page_break_before != y.page_break_before {
             return Err(format!("paragraph {k}: page break"));
         }
+        // indents and line feed (an empty line may be one the reader adds)
+        if (x.indent, x.feed) != (y.indent, y.feed) && !x.is_empty() {
+            return Err(format!(
+                "paragraph {k}: indent / line feed {:?} vs {:?}",
+                (x.indent, x.feed),
+                (y.indent, y.feed)
+            ));
+        }
         // inline runs (ruby / 均等割付) carry the look of their first character
         let looks = |p: &Paragraph| -> Vec<Option<ezpzjtd_core::style::CharStyle>> {
             p.runs

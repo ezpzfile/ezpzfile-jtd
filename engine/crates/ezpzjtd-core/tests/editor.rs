@@ -92,9 +92,11 @@ fn table_insert_and_tab_navigation() {
     let Block::Table(t) = &e.doc.sheets[0].blocks[0] else {
         panic!("no table")
     };
-    assert_eq!(t.rows.len(), 2);
-    assert_eq!(t.rows[0].cells.len(), 3);
-    assert_eq!(t.rows[0].cells[1].paragraphs[0].plain_text(), "B");
+    // the line above the table carries its top line, then the 2 rows
+    assert_eq!(t.rows.len(), 3);
+    assert_eq!(t.rows[0].cells.len(), 1);
+    assert_eq!(t.rows[1].cells.len(), 3);
+    assert_eq!(t.rows[1].cells[1].paragraphs[0].plain_text(), "B");
     // a paragraph follows the table so the caret can leave it
     assert!(matches!(
         e.doc.sheets[0].blocks.last(),
@@ -104,7 +106,56 @@ fn table_insert_and_tab_navigation() {
     let Block::Table(t) = &e.doc.sheets[0].blocks[0] else {
         panic!()
     };
-    assert_eq!(t.rows.len(), 3);
+    assert_eq!(t.rows.len(), 4);
+}
+
+/// Indents shift the lines (the first line has its own), and the line feed
+/// (改行幅) moves the next line by a part of the normal feed.
+#[test]
+fn indents_and_line_feed_in_layout() {
+    use ezpzjtd_core::doc::{Indent, LineFeed};
+    let mut e = Editor::blank();
+    e.insert_text(&"あ".repeat(100));
+    let plain: Vec<(f32, f32)> = e.layout().lines.iter().map(|l| (l.left, l.top)).collect();
+    let cell = e.setup.cell();
+    if let Block::Paragraph(p) = &mut e.doc.sheets[0].blocks[0] {
+        p.indent = Some(Indent {
+            mm: false,
+            left: 4,
+            right: 0,
+            first_left: 2,
+            first_right: 0,
+        });
+        p.feed = Some(LineFeed { kind: 2, value: 0 });
+    }
+    e.relayout();
+    let pitch = e.setup.pitch();
+    let l = &e.layout().lines;
+    assert!(
+        (l[0].left - plain[0].0 - cell).abs() < 0.01,
+        "first line: 2 columns"
+    );
+    assert!(
+        (l[1].left - plain[1].0 - cell * 2.0).abs() < 0.01,
+        "others: 4 columns"
+    );
+    // 39 characters fit on the first line, 38 on the next
+    assert_eq!(l[0].end - l[0].start, 39);
+    assert_eq!(l[1].end - l[1].start, 38);
+    assert!((l[1].top - l[0].top - pitch / 2.0).abs() < 0.01);
+}
+
+/// The page setup of a document decides the line length: the characters
+/// are spread over the width between the margins.
+#[test]
+fn chars_per_line_follow_the_page_setup() {
+    let mut e = Editor::blank();
+    e.setup.chars_per_line = 30;
+    e.insert_text(&"あ".repeat(61));
+    assert!((e.setup.cell() - 150.0 * 72.0 / 25.4 / 30.0).abs() < 0.01);
+    let l = &e.layout().lines;
+    assert_eq!(l.len(), 3);
+    assert_eq!(l[0].end, 30);
 }
 
 #[test]
@@ -285,25 +336,65 @@ fn random_editing_does_not_panic() {
 }
 
 /// A new table follows the geometry of Ichitaro's own files (spec §4.3): every
-/// vertical rule takes 2 grid units, cells sit between rules, and the line
-/// adds up to the table width.
+/// vertical rule takes 2 grid units, cells sit between rules, and each line
+/// adds up to the table width. The line above holds the top line, and every
+/// row has a line under each cell, so the grid is closed.
 #[test]
 fn new_table_rules_add_up() {
-    for cols in 1..=7 {
-        let mut e = Editor::blank();
-        assert!(e.insert_table(2, cols));
-        let Block::Table(t) = &e.doc.sheets[0].blocks[0] else {
-            panic!("no table")
-        };
-        for row in &t.rows {
-            let mut x = 0u16;
-            for (c, cell) in row.cells.iter().enumerate() {
-                assert_eq!(cell.left, x + 2, "cols {cols} cell {c}");
-                assert_eq!(row.rules[c].1, cell.right - cell.left);
-                x = cell.right;
+    // the end of a ruled line: cut last item adds 1, a full one a + dist + 2
+    fn line_end(r: &ezpzjtd_core::doc::Row) -> u32 {
+        let mut c = r.x0 as u32 + 1;
+        for (i, it) in r.rules.iter().enumerate() {
+            let cut = i + 1 == r.rules.len() && it.a == 0 && it.b == 0 && it.dist == 0;
+            c += if cut {
+                1
+            } else {
+                it.a as u32 + it.dist as u32 + 2
+            };
+        }
+        c
+    }
+    for chars in [40u32, 90] {
+        for cols in 1..=7 {
+            let mut e = Editor::blank();
+            e.setup.chars_per_line = chars;
+            assert!(e.insert_table(2, cols));
+            let Block::Table(t) = &e.doc.sheets[0].blocks[0] else {
+                panic!("no table")
+            };
+            let w = t.width;
+            assert_eq!(w as u32, chars * 4);
+            let rows = &t.rows[1..];
+            let right = rows[0].cells.last().unwrap().right + 1; // closing rule centre
+            for row in std::iter::once(&t.rows[0]).chain(rows) {
+                assert_eq!(line_end(row), w as u32, "{chars}/{cols}: line adds up");
+                for it in &row.rules {
+                    assert!(it.a <= 0xf0 && it.dist <= 0xf0, "{chars}/{cols}: {it:?}");
+                }
             }
-            assert_eq!(x + 2, t.width, "cols {cols}: line must end at the width");
-            assert_eq!(row.rules.len(), cols + 1);
+            // the line above: one line under it, across the table
+            let top = t.rows[0].lines();
+            assert!(top.verticals.is_empty());
+            let under: u32 = top.below.iter().map(|(a, b)| (b - a) as u32).sum();
+            assert_eq!(top.below.first().unwrap().0, 1);
+            assert_eq!(under, right as u32 - 1, "{chars}/{cols}");
+            for row in rows {
+                let mut x = 0u16;
+                for (c, cell) in row.cells.iter().enumerate() {
+                    assert_eq!(cell.left, x + 2, "{chars}/{cols} cell {c}");
+                    assert_eq!(row.rules[c].dist, cell.right - cell.left);
+                    x = cell.right;
+                }
+                let g = row.lines();
+                assert_eq!(g.verticals.len(), cols + 1);
+                assert_eq!(g.verticals.last().unwrap().0, right);
+                let under: u32 = g.below.iter().map(|(a, b)| (b - a) as u32).sum();
+                assert_eq!(
+                    under,
+                    right as u32 - 1,
+                    "{chars}/{cols}: a line under every cell"
+                );
+            }
         }
     }
 }

@@ -2,7 +2,7 @@
 
 [日本語](paired-samples.ja.md) · **English** · [한국어](paired-samples.ko.md)
 
-On a Windows PC with Ichitaro (the trial works too), the files below would let us work out the rest of
+On a Windows PC with Ichitaro, the files below would let us work out the rest of
 the format quickly. The method is simple: **type some text into a new document and save it, then
 change one setting and save again under another name.** The difference between the two files is
 where that setting is stored.
