@@ -3,6 +3,10 @@
 </p>
 <h1 align="center">EZPZ File JTD</h1>
 <p align="center"><a href="README.md">日本語</a> · <b>English</b> · <a href="README.ko.md">한국어</a></p>
+<p align="center">
+  <a href="https://ezpzfile.com/jtd-editor"><img src="docs/images/demo-en.svg" alt="Try the live demo" height="56"></a>
+</p>
+<p align="center"><sub>Demo: <a href="https://ezpzfile.com/jtd-editor">English</a> · <a href="https://ezpzfile.com/ja/jtd-editor">日本語</a></sub></p>
 
 **Open Ichitaro (一太郎) `.jtd` documents anywhere: Mac, Linux, phone, browser.**
 An open-source reader and format specification for JustSystems Ichitaro files,
@@ -10,7 +14,7 @@ in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never 
 
 Status: **v0.3, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
-![The JTD editor](docs/images/editor.png)
+[![The JTD editor](docs/images/editor.png)](https://ezpzfile.com/jtd-editor)
 
 <sub>A notice made in the latest Ichitaro, open in the browser editor.</sub>
 

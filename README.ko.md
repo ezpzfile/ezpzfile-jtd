@@ -3,6 +3,10 @@
 </p>
 <h1 align="center">EZPZ File JTD</h1>
 <p align="center"><a href="README.md">日本語</a> · <a href="README.en.md">English</a> · <b>한국어</b></p>
+<p align="center">
+  <a href="https://ezpzfile.com/ja/jtd-editor"><img src="docs/images/demo-ko.svg" alt="브라우저에서 데모 써 보기" height="56"></a>
+</p>
+<p align="center"><sub>데모: <a href="https://ezpzfile.com/ja/jtd-editor">日本語</a> · <a href="https://ezpzfile.com/jtd-editor">English</a></sub></p>
 
 **일본 워드프로세서 一太郎(이치타로)의 `.jtd` 문서를 맥·리눅스·휴대폰·브라우저에서 열고 고쳐서 저장.**
 저스트시스템 一太郎 파일을 다루는 오픈소스 읽기 엔진·편집기·파일 형식 규격서입니다.
@@ -10,7 +14,7 @@ HWP의 [rhwp](https://github.com/edwardkim/rhwp)와 같은 생각으로 만들�
 
 상태: **v0.3. `.jtd`로 다시 저장하는 읽기 엔진 + 편집기(개발자 미리보기).** 저스트시스템과는 관계없습니다.
 
-![JTD 편집기 화면](docs/images/editor.png)
+[![JTD 편집기 화면](docs/images/editor.png)](https://ezpzfile.com/ja/jtd-editor)
 
 <sub>一太郎 최신판으로 만든 안내문을 브라우저 편집기로 연 모습.</sub>
 
