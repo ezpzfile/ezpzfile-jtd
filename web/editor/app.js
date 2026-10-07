@@ -1060,7 +1060,7 @@ function save(ask) {
   const canJtd = S.ed.canSaveJtd();
   const jtd = $('input[name="fmt"][value="jtd"]', d);
   jtd.disabled = !canJtd;
-  $("#fmt-jtd-note").textContent = canJtd ? tr("元の文書を書きかえて保存（罫線・書式をそのまま保持）") : tr("新規文書は準備中（一太郎文書を開いた場合に使えます）");
+  $("#fmt-jtd-note").textContent = !canJtd ? tr("新規文書は準備中（一太郎文書を開いた場合に使えます）") : S.ext ? tr("元の文書を書きかえて保存（罫線・書式をそのまま保持）") : tr("一太郎と一太郎ビューアで開ける形式で保存");
   const def = S.saveFmt || (canJtd ? "jtd" : "docx");
   $$('input[name="fmt"]', d).forEach((r) => (r.checked = r.value === def));
   d.returnValue = "";

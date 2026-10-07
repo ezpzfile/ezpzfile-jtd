@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Open a .jtd in the real Ichitaro Viewer (Wine) and report what happened.
 
-Usage: view.py FILE.jtd OUT.png [--text OUT.txt]
+Usage: view.py FILE.jtd OUT.png [--text OUT.txt] [--pages N]
 
 Prints one line: STATUS<TAB>detail, where STATUS is
   OPEN    the document window appeared
@@ -9,6 +9,7 @@ Prints one line: STATUS<TAB>detail, where STATUS is
   CRASH   the viewer process ended without showing the document
   TIMEOUT nothing happened in time
 With --text, the document text is copied out of the viewer (Ctrl+A, Ctrl+C).
+With --pages N, pages 2..N are also saved as OUT-2.png ... (the next-page button).
 Needs: Xvfb on $DISPLAY, wine prefix with TaroView installed (see README.md here).
 """
 import os, subprocess, sys, time, shutil
@@ -80,6 +81,14 @@ def main():
         subprocess.run(["xdotool", "windowsize", wid, "1280", "900"], env=ENV)
         subprocess.run(["xdotool", "windowmove", wid, "0", "0"], env=ENV)
         time.sleep(2.5)
+        pages = int(sys.argv[sys.argv.index("--pages") + 1]) if "--pages" in sys.argv else 1
+        for k in range(2, pages + 1):
+            subprocess.run(["xdotool", "mousemove", "556", "38", "click", "1"], env=ENV)
+            time.sleep(2.0)
+            subprocess.run(["import", "-window", "root", png[:-4] + f"-{k}.png"], env=ENV)
+        if pages > 1:
+            subprocess.run(["xdotool", "key", "--window", wid, "ctrl+Home"], env=ENV, stderr=subprocess.DEVNULL)
+            time.sleep(1.0)
         if text_out:
             copy_text(wid, text_out)
     subprocess.run(["import", "-window", "root", png], env=ENV)

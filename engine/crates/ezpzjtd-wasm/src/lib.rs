@@ -67,12 +67,13 @@ pub struct JtdEditor {
 
 #[wasm_bindgen]
 impl JtdEditor {
-    /// New blank document.
+    /// New document: one empty paragraph on Ichitaro's default A4 page. It is
+    /// saved as .jtd on the empty Ichitaro file `blank::BLANK_JTD`.
     #[wasm_bindgen(constructor)]
     pub fn new() -> JtdEditor {
         JtdEditor {
-            ed: Editor::blank(),
-            original: None,
+            ed: Editor::new(ezpzjtd_core::blank::new_document()),
+            original: Some(ezpzjtd_core::blank::BLANK_JTD.to_vec()),
             warnings: Vec::new(),
         }
     }
@@ -326,7 +327,8 @@ impl JtdEditor {
         let pages = self.ed.layout().pages.clone();
         ezpzjtd_core::pdf::to_pdf(&pages, &images, title)
     }
-    /// Saving as .jtd is possible (the document was opened from a .jtd).
+    /// Saving as .jtd is possible (always: a new document is saved on the
+    /// empty Ichitaro file).
     #[wasm_bindgen(js_name = canSaveJtd)]
     pub fn can_save_jtd(&self) -> bool {
         self.original.is_some()

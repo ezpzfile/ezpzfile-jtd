@@ -106,9 +106,6 @@ No trademarks, logos, icons or signature colours are used. Only the layout and t
 - Joining a line inside a 罫線 cell to a line outside it, or joining lines from different cells
 - A line break in the middle of ruby or evenly spaced (均等割付) text
 - A new table directly inside or next to a 罫線 cell
-- Saving a new document (one started blank) as jtd: there is no original to patch yet, so this is
-  still in progress
-- Italics: the jtd attribute number is unknown, so the text is saved as plain and the user is told
 
 ## 5. Differences caused by what we do not know yet
 
@@ -141,8 +138,7 @@ No trademarks, logos, icons or signature colours are used. Only the layout and t
   crash. Automated browser tests cover typing, IME, tables, saving and menus.
 
 **Not yet**
-- Saving a new document as jtd, 罫線モード (drawing lines with the mouse), inserting or deleting
-  columns, merging cells
+- 罫線モード (drawing lines with the mouse), inserting or deleting columns, merging cells
 - Vertical writing, pictures, headers and footers, indent and line spacing settings, choosing a
   font
 - Auto-scroll while dragging, spell check, packaging as a Mac app (WebView)

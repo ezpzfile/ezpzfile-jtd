@@ -73,9 +73,11 @@ fn container_roundtrip() {
 
 #[test]
 fn style_events_cover_units() {
-    // run 2, set size=423 (12pt) + bold on 1 unit, run 2
+    // run 2, set size=423 (12pt) + bold (id 1, id 20 bits 26-27) with the
+    // attributes switched on (id 20 high bit) on 1 unit, run 2
     let ev = [
-        0x00, 0, 0, 0, 2, 0xfe, 2, 2, 0x01, 0xa7, 1, 2, 0, 1, 0xff, 0x00, 0x00, 0, 0, 0, 2, 0xff,
+        0x00, 0, 0, 0, 2, 0xfe, 2, 2, 0x01, 0xa7, 1, 2, 0, 1, 20, 4, 0x84, 0, 0, 0, 0xff, 0x00,
+        0x00, 0, 0, 0, 2, 0xff,
     ];
     let sp = style::spans(&ev, 5);
     let total: usize = sp.iter().map(|s| s.len).sum();
@@ -83,6 +85,27 @@ fn style_events_cover_units() {
     let st = style::CharStyle::from_raw(&sp.last().unwrap().raw);
     assert_eq!(st.size_pt, Some(12.0));
     assert_eq!(st.bold, Some(true));
+}
+
+#[test]
+fn attributes_count_only_when_switched_on() {
+    // Ichitaro draws ids 2-19 only while id 20 has its high bit
+    let raw = |p: &[(u8, u32)]| p.iter().copied().collect::<style::RawProps>();
+    let off = style::CharStyle::from_raw(&raw(&[(1, 1), (2, 423), (13, 1), (15, 0xd4)]));
+    assert!(off.is_plain());
+    let on = style::CharStyle::from_raw(&raw(&[(2, 423), (13, 1), (15, 0xd4), (20, 0x8000_0010)]));
+    assert_eq!(
+        (on.size_pt, on.underline, on.color.as_deref()),
+        (Some(12.0), Some(1), Some("#d40000"))
+    );
+    // the underline needs its own bit, bold and italic are fields of id 20
+    let no_line = style::CharStyle::from_raw(&raw(&[(13, 1), (20, 0x8000_0000)]));
+    assert_eq!(no_line.underline, None);
+    let bi = style::CharStyle::from_raw(&raw(&[(20, 0x9400_0000)]));
+    assert_eq!((bi.bold, bi.italic), (Some(true), Some(true)));
+    // 3 in a field means off
+    let off3 = style::CharStyle::from_raw(&raw(&[(20, 0xbc00_0000)]));
+    assert_eq!((off3.bold, off3.italic), (None, None));
 }
 
 #[test]

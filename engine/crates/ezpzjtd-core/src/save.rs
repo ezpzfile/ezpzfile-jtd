@@ -41,7 +41,7 @@ use crate::text;
 #[derive(Debug)]
 pub struct Saved {
     pub bytes: Vec<u8>,
-    /// Things that could not be stored (e.g. italic has no known property).
+    /// Things that could not be stored.
     pub warnings: Vec<String>,
     /// Number of sheets whose text changed.
     pub changed: usize,
@@ -125,8 +125,6 @@ struct I0 {
     del: (u32, u32),
     /// Flat paragraph index (characters, ends, page breaks).
     para: usize,
-    /// Character index within the paragraph.
-    ch: usize,
     group: u32,
     /// Row items: (block, row) in the original.
     row: (usize, usize),
@@ -195,7 +193,6 @@ fn flatten0(blocks: &[Block]) -> Result<Vec<I0>> {
             after: *last,
             del: (0, 0),
             para: pi,
-            ch: NONE,
             group: u32::MAX,
             row,
             keep_as_para_end: false,
@@ -235,7 +232,6 @@ fn flatten0(blocks: &[Block]) -> Result<Vec<I0>> {
                 before: cs.before,
                 after: cs.after,
                 del: (cs.unit, cs.len as u32),
-                ch: k,
                 group: cs.group,
                 ..blank.clone()
             });
@@ -280,7 +276,6 @@ fn flatten0(blocks: &[Block]) -> Result<Vec<I0>> {
                     after,
                     del,
                     para: NONE,
-                    ch: NONE,
                     group: u32::MAX,
                     row,
                     keep_as_para_end: false,
@@ -709,15 +704,46 @@ fn parse_hex(c: &str) -> Option<u32> {
 
 /// Same visible formatting, ignoring properties that cannot be stored.
 fn same_storable(a: &CharStyle, b: &CharStyle) -> bool {
-    a.bold == b.bold && a.size_pt == b.size_pt && a.underline == b.underline && a.color == b.color
+    a.bold == b.bold
+        && a.italic == b.italic
+        && a.size_pt == b.size_pt
+        && a.underline == b.underline
+        && a.color == b.color
 }
 
 /// `raw` with the formatting of `want` applied (only what differs).
+///
+/// Ichitaro draws ids 2-19 only while id 20 has its high bit
+/// ([`style::ATTR_ON`]), bold and italic are two-bit fields of id 20, and an
+/// underline needs the id 20 underline bit as well as its kind in id 13.
+/// Writing the values alone (as we did before 2026-10-07) saves a file that
+/// opens but shows the text plain.
 fn apply_look(raw: &RawProps, want: &CharStyle) -> RawProps {
     let have = CharStyle::from_raw(raw);
+    if same_storable(&have, want) {
+        return raw.clone();
+    }
     let mut r = raw.clone();
+    let mut flags = r.get(&20).copied().unwrap_or(0);
+    if flags & style::ATTR_ON == 0 {
+        // nothing stored here was shown: switch the attributes on from plain,
+        // or what the old values say would show up with them
+        for (k, v) in r.iter_mut() {
+            if let Some(n) = neutral(*k) {
+                *v = n;
+            }
+        }
+        flags = 0;
+    }
+    let field = |flags: u32, shift: u32, on: bool| (flags & !(3 << shift)) | ((on as u32) << shift);
     if have.bold != want.bold {
-        r.insert(1, if want.bold == Some(true) { 1 } else { 0xffff });
+        let on = want.bold == Some(true);
+        // id 1 as Ichitaro writes it next to the bold bits
+        r.insert(1, if on { 1 } else { 0xffff });
+        flags = field(flags, style::BOLD_SHIFT, on);
+    }
+    if have.italic != want.italic {
+        flags = field(flags, style::ITALIC_SHIFT, want.italic == Some(true));
     }
     if have.size_pt != want.size_pt {
         r.insert(
@@ -729,6 +755,11 @@ fn apply_look(raw: &RawProps, want: &CharStyle) -> RawProps {
     }
     if have.underline != want.underline {
         r.insert(13, want.underline.map(|u| u as u32).unwrap_or(0));
+        if want.underline.is_some() {
+            flags |= style::ATTR_UNDERLINE;
+        } else {
+            flags &= !style::ATTR_UNDERLINE;
+        }
     }
     if have.color != want.color {
         r.insert(
@@ -739,15 +770,21 @@ fn apply_look(raw: &RawProps, want: &CharStyle) -> RawProps {
                 .unwrap_or(0xffff_ffff),
         );
     }
+    r.insert(20, flags | style::ATTR_ON);
+    if flags == 0 && CharStyle::from_raw(&r).same_look(&CharStyle::default()) {
+        // back to plain: attributes off, as Ichitaro writes it
+        r.insert(20, 0);
+    }
     r
 }
 
-/// The value that means "not set" for the properties the editor changes.
+/// The value that means "not set" (what Ichitaro writes when the text goes
+/// back to plain).
 fn neutral(id: u8) -> Option<u32> {
     match id {
-        1 => Some(0xffff),
-        2 | 13 => Some(0),
-        15 => Some(0xffff_ffff),
+        1 | 3 | 8 => Some(0xffff),
+        2 | 4 | 5 | 13 | 18 | 19 | 20 => Some(0),
+        15 | 16 => Some(0xffff_ffff),
         _ => None,
     }
 }
@@ -1082,7 +1119,6 @@ fn save_sheet(
     }
     let paras0 = flat_paras(&blocks0);
     let paras1 = flat_paras(blocks1);
-    let looks0: Vec<Vec<&CharStyle>> = paras0.iter().map(|p| char_looks(p)).collect();
     let looks1: Vec<Vec<&CharStyle>> = paras1.iter().map(|p| char_looks(p)).collect();
     let items0 = flatten0(&blocks0)?;
     let items1 = flatten1(blocks1);
@@ -1101,7 +1137,6 @@ fn save_sheet(
             *group_left.entry(i.group).or_default() += 1;
         }
     }
-    let mut italic_lost = false;
     let mark = |del: &mut Vec<bool>, (s, l): (u32, u32)| {
         for u in s..s + l {
             if let Some(d) = del.get_mut(u as usize) {
@@ -1219,9 +1254,6 @@ fn save_sheet(
                     // shows the look of its first character for all of them)
                     let l0 = CharStyle::from_raw(&t.raws.list[t.ru[o.del.0 as usize] as usize]);
                     let l1 = looks1[e.para][e.ch];
-                    if l1.italic == Some(true) && looks0[o.para][o.ch].italic != Some(true) {
-                        italic_lost = true;
-                    }
                     if !same_storable(&l0, l1) {
                         for u in o.del.0..o.del.0 + o.del.1 {
                             let r = apply_look(&t.raws.list[t.ru[u as usize] as usize], l1);
@@ -1390,9 +1422,6 @@ fn save_sheet(
                 let (units, raws): (Vec<u16>, Vec<u32>) = match e.it {
                     It::Ch(c) => {
                         let l1 = looks1[e.para][e.ch];
-                        if l1.italic == Some(true) {
-                            italic_lost = true;
-                        }
                         let r = if t.raws.list.is_empty() {
                             apply_look(&RawProps::new(), l1)
                         } else {
@@ -1477,9 +1506,6 @@ fn save_sheet(
                 }
             }
         }
-    }
-    if italic_lost {
-        warnings.push("斜体は一太郎形式に保存できないため、通常の文字として保存しました。".into());
     }
 
     // stage 1: apply deletions and insertions

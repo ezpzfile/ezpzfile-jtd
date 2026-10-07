@@ -21,12 +21,32 @@ use std::collections::BTreeMap;
 /// Raw property id → value (big-endian, up to 4 bytes).
 pub type RawProps = BTreeMap<u8, u32>;
 
+/// Id 20 holds flags. Its high bit switches the character attributes on:
+/// without it Ichitaro draws the text plain whatever ids 2-19 say (size,
+/// colour, underline, font, scale, baseline). Ichitaro sets it on every run
+/// it formats and writes `0` when the text goes back to plain. Checked in
+/// Ichitaro Viewer, 2026-10-07 (spec §5).
+pub const ATTR_ON: u32 = 0x8000_0000;
+/// Id 20 bit: the underline of id 13 is drawn.
+pub const ATTR_UNDERLINE: u32 = 0x10;
+/// Id 20 bit: the baseline shift of id 19 is applied.
+pub const ATTR_BASELINE: u32 = 0x1000;
+/// Id 20 bits 26-27: bold (`1` or `2` on, `0` or `3` off).
+pub const BOLD_SHIFT: u32 = 26;
+/// Id 20 bits 28-29: italic (`1` or `2` on, `0` or `3` off).
+pub const ITALIC_SHIFT: u32 = 28;
+
+/// The two-bit field of id 20 at `shift` says "on".
+pub fn flag_on(flags: u32, shift: u32) -> bool {
+    flags & ATTR_ON != 0 && matches!((flags >> shift) & 3, 1 | 2)
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct CharStyle {
-    /// Bold. id 1 (`1` on, `0xffff` inherit). confirmed
+    /// Bold. id 20 bits 26-27 (Ichitaro also sets id 1 to `1`). confirmed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
-    /// Italic. Editor-side only for now (the JTD property id is not known yet).
+    /// Italic. id 20 bits 28-29. confirmed (viewer)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
     /// Font size in points. id 2, stored in 1/100 mm (`0` = document default). confirmed
@@ -59,10 +79,13 @@ pub struct CharStyle {
 
 impl CharStyle {
     pub fn from_raw(raw: &RawProps) -> Self {
-        let g = |k: u8| raw.get(&k).copied();
+        let flags = raw.get(&20).copied().unwrap_or(0);
+        let on = flags & ATTR_ON != 0;
+        // attributes count only while id 20 switches them on (see ATTR_ON)
+        let g = |k: u8| raw.get(&k).copied().filter(|_| on);
         let flag16 = |v: u32| v != 0xffff && v != 0xffff_ffff;
         CharStyle {
-            bold: g(1).and_then(|v| if v == 1 { Some(true) } else { None }),
+            bold: flag_on(flags, BOLD_SHIFT).then_some(true),
             size_pt: g(2)
                 .filter(|&v| v > 0)
                 .map(|v| ((v as f32) / 35.2778 * 2.0).round() / 2.0),
@@ -70,13 +93,19 @@ impl CharStyle {
             font_latin: g(8).filter(|&v| flag16(v)).map(|v| v as u16),
             scale_x: g(4).filter(|&v| v > 0 && v != 100).map(|v| v as u8),
             scale_y: g(5).filter(|&v| v > 0 && v != 100).map(|v| v as u8),
-            underline: g(13).filter(|&v| v > 0 && v != 0xffff).map(|v| v as u16),
+            underline: g(13)
+                .filter(|_| flags & ATTR_UNDERLINE != 0)
+                .filter(|&v| v > 0 && v != 0xffff)
+                .map(|v| v as u16),
             color: g(15).filter(|&v| v != 0xffff_ffff && v != 0).map(|v| {
                 let (r, gg, b) = (v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff);
                 format!("#{r:02x}{gg:02x}{b:02x}")
             }),
-            baseline: g(19).map(|v| v as u16 as i16).filter(|&v| v != 0),
-            italic: None,
+            baseline: g(19)
+                .filter(|_| flags & ATTR_BASELINE != 0)
+                .map(|v| v as u16 as i16)
+                .filter(|&v| v != 0),
+            italic: flag_on(flags, ITALIC_SHIFT).then_some(true),
             raw: raw.clone(),
         }
     }

@@ -29,12 +29,12 @@ Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese mi
 - paragraphs, alignment, indents, line feed (改行幅)
 - ruled tables (merged cells, column widths, vertical and **horizontal rules**, rules between lines or through them, the 16 **line types**: thick, dotted, double and so on)
 - page setup: **paper size and orientation, margins, characters per line and lines per page**, base character size
-- font size, bold, underline, colour, ruby (furigana), page breaks
+- font size, bold, italic, underline, colour, ruby (furigana), page breaks
 - document properties, including the **original file path** that Ichitaro leaves inside files
 - export: plain text, Markdown, HTML, JSON
 
 Not yet: pictures, vertical writing (the setting is read), headers and footers, columns (段組),
-`.jttc` (compressed), saving a *new* document as `.jtd`. See the
+`.jttc` (compressed). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 
 ## Editor
@@ -64,10 +64,16 @@ filled in. Opened in a frame of a page on the same site, it talks to that page a
 A document opened from a `.jtd` saves back to `.jtd` (Ctrl+S). The engine does not
 regenerate the file: it **patches the original**, so everything it does not understand
 yet (ruled-line geometry, hidden fields, macros, pictures) stays byte for byte. Text,
-paragraphs, bold / size / underline / colour, alignment, indents and line feed, page
+paragraphs, bold / italic / size / underline / colour, alignment, indents and line feed, page
 breaks and table lines are written (a new row keeps the line types of the row it
 copies). Every save is read back and compared with the editor; if anything differs
 the save is refused with a reason and nothing is written (then use Word or PDF).
+
+**New documents** save as `.jtd` too. They are written into an empty Ichitaro file with the
+page a new Ichitaro document gets (A4, 30 mm margins, 40 × 40 characters, 10.5 pt):
+`engine/crates/ezpzjtd-core/src/blank.jtd`, made from a public Ichitaro file with its text,
+author, dates and original file path taken out (`examples/makeblank.rs` shows how). Text,
+formatting, tables and page breaks typed into a new document open in Ichitaro Viewer.
 
 Checked with JustSystems' own Ichitaro Viewer 2022, run automatically through Wine
 ([tools/taroview](tools/taroview/README.md)): see [experiments/results.md](experiments/results.md) (in Korean).

@@ -5,6 +5,7 @@
 *.jttc
 *.jtdc
 !/engine/crates/**/tests/fixtures/*.jtd
+!/engine/crates/ezpzjtd-core/src/blank.jtd
 .DS_Store
 /web/pkg/
 /web/dist/

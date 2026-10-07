@@ -8,6 +8,7 @@
 //! - [`props`]: OLE property sets (`SummaryInformation`)
 //! - [`doc`]: the assembled model (sheets → paragraphs / tables)
 //! - [`export`]: HTML and Markdown output
+//! - [`save`]: saving as .jtd by patching a file; [`blank`]: the empty file new documents are saved on
 //!
 //! ```no_run
 //! let bytes = std::fs::read("sample.jtd").unwrap();
@@ -15,6 +16,7 @@
 //! println!("{}", doc.plain_text());
 //! ```
 
+pub mod blank;
 pub mod cfb;
 pub mod cfbw;
 pub mod doc;

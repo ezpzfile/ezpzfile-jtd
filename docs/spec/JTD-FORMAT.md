@@ -367,7 +367,7 @@ Property ids, decoded by aligning 22 722 characters with the Word twins:
 
 | Id | Size | Meaning | Confidence |
 |---|---|---|---|
-| 1 | 2 | **bold**: `1` on, `FFFF` inherit | confirmed (62/62) |
+| 1 | 2 | `1` next to bold (Ichitaro writes it with the bold bits of id 20), `FFFF` inherit. Alone it does not make bold text | confirmed (62/62 with Word), viewer |
 | 2 | 2 | **font size in 1/100 mm**, `0` = document default. 282 → 8 pt, 318 → 9 pt, 388 → 11 pt, 423 → 12 pt (1 pt = 35.28) | confirmed |
 | 3 | 2 | font selector (`2`, `10` → Gothic; `1` → Times New Roman). Not a direct `/Font` index | candidate |
 | 4 | 1 | horizontal scale % (50, 100, 200) | candidate |
@@ -380,7 +380,24 @@ Property ids, decoded by aligning 22 722 characters with the Word twins:
 | 17 | 4 | unknown | unknown |
 | 18 | 2 | unknown | unknown |
 | 19 | 2 | signed; tracks baseline shift in Word, sign inverted, scale unclear | candidate |
-| 20 | 4 | bit flags, high bit usually set; `0x10` often with underline | unknown |
+| 20 | 4 | **flags**, see below | confirmed (viewer) |
+
+**Id 20** (found 2026-10-07 by writing one line per value and opening the
+file in Ichitaro Viewer):
+
+| Bits | Meaning |
+|---|---|
+| `80000000` | **attributes on**. Without it ids 2-19 are ignored: the text is drawn plain whatever size, colour, underline, font, scale or baseline they hold. Ichitaro sets it on every run it formats and writes `20 = 0` when the text goes back to plain. Every formatted character of the 95 public files has it |
+| `0C000000` (bits 26-27) | **bold**: `1` or `2` on, `0` or `3` off |
+| `30000000` (bits 28-29) | **italic**: `1` or `2` on, `0` or `3` off |
+| `03000000` (bits 24-25) | emphasis dots (傍点): `2` above, `3` below |
+| `00001000` | baseline shift of id 19 applied |
+| `00000010` | underline of id 13 drawn (id 13 alone draws nothing) |
+| `00000008` | reverse (white on black) |
+
+So a run is bold when id 20 is `84000000` (Ichitaro's own bold title in the
+corpus: `1 = 1`, `2 = 1A7`, `20 = 84000002`). The public files hold one more
+value, `BD004000`, which shows as plain text: bold and italic are `3` there.
 
 ---
 
@@ -412,7 +429,7 @@ user before they share a file. **confirmed**
 2. ~~Paragraph indents and line spacing units (TLV `0020`, `0026`)~~ (see §4.1)
 3. ~~Page size and margins~~ (see §10); header and footer positions, 段組
 4. Font selector ids 3/8 → face names
-5. Properties 6-12, 14, 16-20
+5. Properties 6-12, 14, 16-18 and the other bits of 20 (§5)
 6. Vertical writing (縦書き): the flag is known (§10), the layout is not done
 7. `/Header`, `/Footnote`, frames (`/Frame`, `LayoutBoxText`)
 8. `.jttc` (LHA) and pre-Ichitaro 8 files
@@ -447,6 +464,17 @@ Rules that Ichitaro Viewer accepts (all **viewer**):
    change makes the file unreadable.**
 6. Splitting a paragraph needs only a `000A`; the new paragraph inherits the
    header state. A paragraph that must look different gets its own header.
+7. Formatting must switch the attributes on (id 20, §5): size, colour and
+   underline written without the high bit open fine but show as plain text,
+   and bold, italic and underline are bits of id 20. Going back to plain
+   writes `20 = 0`. (Saves before 2026-10-07 wrote the values alone; on files
+   whose text already had attributes on, the new text took the bit from its
+   neighbour and showed, elsewhere it did not.)
+8. A **new document** is saved the same way, on `src/blank.jtd`: one empty
+   paragraph on Ichitaro's default page (A4, margins 30 mm, 40 字 × 40 行,
+   10.5 pt), made from a public file by `examples/makeblank.rs` (text, both
+   summaries, layout caches and the document id replaced or removed; the
+   storages' class ids kept, without them the viewer shows no document).
 
 Every save is checked by reading the result back and comparing it with the
 edited document; on any difference the save is refused and nothing is

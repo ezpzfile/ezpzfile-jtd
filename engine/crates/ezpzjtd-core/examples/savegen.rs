@@ -57,7 +57,11 @@ fn main() {
                     }
                     6 => {
                         e.move_caret(Move::WordRight, true);
-                        e.toggle_bold()
+                        match rng.next(3) {
+                            0 => e.toggle_bold(),
+                            1 => e.toggle_italic(),
+                            _ => e.toggle_underline(),
+                        }
                     }
                     7 => {
                         e.move_caret(Move::WordRight, true);

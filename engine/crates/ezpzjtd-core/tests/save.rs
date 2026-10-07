@@ -158,7 +158,11 @@ fn session(e: &mut Editor, rng: &mut Rng, steps: usize, level: u64) -> Vec<Strin
                     )
                 }
             }
-            7 => e.toggle_bold(),
+            7 => match rng.next(3) {
+                0 => e.toggle_bold(),
+                1 => e.toggle_italic(),
+                _ => e.toggle_underline(),
+            },
             8 => e.size_step(rng.next(2) == 0),
             9 => e.set_color(if rng.next(2) == 0 {
                 Some("#d40000".into())

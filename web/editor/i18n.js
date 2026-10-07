@@ -64,6 +64,7 @@ const EN = {
   "閉じる": "Close",
   "元の文書を書きかえて保存（罫線・書式をそのまま保持）": "Writes over the original document and keeps its ruled lines and formatting",
   "新規文書は準備中（一太郎文書を開いた場合に使えます）": "Not ready for new documents yet (works when you opened an Ichitaro file)",
+  "一太郎と一太郎ビューアで開ける形式で保存": "Saved in the format Ichitaro and Ichitaro Viewer open",
 
   // ---- menus
   "ファイル": "File",
