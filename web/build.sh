@@ -28,7 +28,9 @@ print("dist/ezpzjtd-viewer.html", len(html) // 1024, "KB")
 # the editor script: words (i18n.js), the optional link to a framing page (host.js), the app
 app = "\n".join(open(f, encoding="utf-8").read() for f in ("editor/i18n.js", "editor/host.js", "editor/app.js"))
 ed = open("editor.html", encoding="utf-8").read()
-ed = ed.replace("/*__EZPZJTD_GLUE__*/", glue).replace("/*__EZPZJTD_APP__*/", app)
+import json
+# the glue again as a string, for the Worker that checks a file before the editor opens it
+ed = ed.replace("/*__EZPZJTD_GLUE__*/", glue).replace("/*__EZPZJTD_APP__*/", app).replace('/*__EZPZJTD_GLUE_STR__*/""', json.dumps(glue).replace("</", "<\\/"))
 for lang, name in (("ja", "ezpzjtd-editor.html"), ("en", "ezpzjtd-editor.en.html")):
     page = ed.replace("/*__EZPZJTD_WASM__*/", wasm).replace('<html lang="ja">', f'<html lang="{lang}">')
     open(f"dist/{name}", "w", encoding="utf-8").write(page)

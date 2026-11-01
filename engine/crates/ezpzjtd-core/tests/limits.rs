@@ -136,3 +136,97 @@ fn limits_from_json() {
     assert_eq!(l.max_sheets, Limits::default().max_sheets);
     assert_eq!(Limits::from_json("not json"), Limits::default());
 }
+
+/// Build an SsmgV.01 container: `blocks` of `block_size`, then one directory
+/// entry per sub-stream (`len`, block ids).
+fn container(block_size: usize, blocks: &[Vec<u8>], subs: &[(u32, Vec<u32>)]) -> Vec<u8> {
+    let mut b = b"SsmgV.01".to_vec();
+    b.extend(be(subs.len() as u32));
+    b.extend(be(block_size as u32));
+    b.extend(be(blocks.len() as u32));
+    for blk in blocks {
+        let mut blk = blk.clone();
+        blk.resize(block_size, 0);
+        b.extend(blk);
+    }
+    for (i, (len, ids)) in subs.iter().enumerate() {
+        b.extend(be(i as u32));
+        b.extend(be(0));
+        b.extend(be(*len));
+        b.extend(be(ids.len() as u32));
+        b.extend(be(ids.len() as u32));
+        for id in ids {
+            b.extend(be(*id));
+        }
+    }
+    b.extend(be(0));
+    b
+}
+
+fn utf16be(s: &str) -> Vec<u8> {
+    s.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()
+}
+
+#[test]
+fn a_block_listed_twice_is_refused() {
+    let mut first = b"TextV.01".to_vec();
+    first.extend(be(1000));
+    first.extend(utf16be(&"あ".repeat(100)));
+    let blocks = vec![first, utf16be(&"い".repeat(128))];
+    // honest: blocks 0 and 1
+    let ok = container(256, &blocks, &[(512, vec![0, 1])]);
+    assert!(ezpzjtd_core::ssmg::substreams(&ok).is_ok());
+    // block 0 twice in one sub-stream
+    let twice = container(256, &blocks, &[(512, vec![0, 0])]);
+    assert!(quick(|| ezpzjtd_core::ssmg::substreams(&twice)).is_err());
+    // block 1 in two sub-streams
+    let shared = container(256, &blocks, &[(256, vec![0]), (256, vec![1]), (256, vec![1])]);
+    assert!(quick(|| ezpzjtd_core::ssmg::substreams(&shared)).is_err());
+    // and through open()
+    assert!(quick(|| open(with_text_stream(twice))).is_err());
+}
+
+#[test]
+fn b_qlst_sub_stream_listed_twice_is_refused() {
+    let mut head = b"QLSTV.01".to_vec();
+    head.extend(be(3));
+    for _ in 0..3 {
+        head.extend(be(64));
+        head.extend(be(1)); // every piece in sub-stream 1
+    }
+    let piece = utf16be(&"う".repeat(64));
+    let dt = container(256, &[head, piece], &[(36, vec![0]), (128, vec![1])]);
+    let r = quick(|| ezpzjtd_core::ssmg::pieces(&dt));
+    assert!(r.is_err());
+    assert!(quick(|| open(with_text_stream(dt))).is_err());
+}
+
+#[test]
+fn c_large_length_field_fails_fast() {
+    let mut first = b"TextV.01".to_vec();
+    first.extend(be(u32::MAX));
+    // 4 GB claimed, one 256-byte block listed
+    let dt = container(256, &[first], &[(u32::MAX, vec![0])]);
+    let subs = quick(|| ezpzjtd_core::ssmg::substreams(&dt)).unwrap();
+    assert!(subs[0].len() <= 256);
+    // more block ids claimed than the stream holds
+    let mut lying = container(256, &[b"TextV.01".to_vec()], &[(256, vec![0])]);
+    let at = 20 + 256 + 12;
+    lying[at..at + 4].copy_from_slice(&be(u32::MAX));
+    assert!(quick(|| ezpzjtd_core::ssmg::substreams(&lying)).is_err());
+}
+
+#[test]
+fn public_layouts_still_open() {
+    // TextV.01 and QLSTV.01 built the honest way still read
+    let mut head = b"QLSTV.01".to_vec();
+    head.extend(be(2));
+    head.extend(be(3));
+    head.extend(be(1));
+    head.extend(be(3));
+    head.extend(be(2));
+    let dt = container(256, &[head, utf16be("一太郎"), utf16be("文書\u{d}")], &[(28, vec![0]), (6, vec![1]), (6, vec![2])]);
+    let p = ezpzjtd_core::ssmg::pieces(&dt).unwrap();
+    let text: String = p.iter().map(|x| String::from_utf16_lossy(&x.units)).collect();
+    assert_eq!(text, "一太郎文書\u{d}");
+}

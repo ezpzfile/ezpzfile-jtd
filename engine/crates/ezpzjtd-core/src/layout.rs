@@ -51,6 +51,10 @@ impl Default for PageSetup {
 
 pub const MM: f32 = 72.0 / 25.4;
 
+/// Most laid-out lines in one sheet (each line carries its characters'
+/// positions). Far above real documents; see `limits.rs`.
+pub const MAX_LINES: usize = 400_000;
+
 fn is_plain_kind(k: &u8) -> bool {
     *k <= 1
 }
@@ -789,6 +793,12 @@ pub fn layout_with(
     ctx.new_page();
     let mut flat = 0usize;
     for b in blocks {
+        // stop at the page limit, and at an element limit for pages that do
+        // not break (a huge table cell): drawing millions of items is the
+        // same problem as millions of pages
+        if !ctx.out.truncated && ctx.out.lines.len() > MAX_LINES {
+            ctx.out.truncated = true;
+        }
         if ctx.out.truncated {
             break;
         }

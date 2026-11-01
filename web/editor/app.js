@@ -58,6 +58,54 @@ function initEngine() {
   return __wbg_init();
 }
 
+/*
+ * Check a file in a Worker before the editor opens it. A damaged or crafted file
+ * that would use up memory or run for long then only stops the Worker (its
+ * memory goes with it), not this page. The engine also has its own limits
+ * (limits.rs) and at most 1 GiB of memory; this is the outer wall.
+ */
+const PREFLIGHT_MS = 20000;
+let preflightModule = null;
+async function engineModule() {
+  if (preflightModule) return preflightModule;
+  const src = !WASM_URL.startsWith("/*") ? await (await fetch(WASM_URL)).arrayBuffer() : !WASM_B64.startsWith("/*") ? b64bytes(WASM_B64) : null;
+  if (!src) return null;
+  preflightModule = await WebAssembly.compile(src);
+  return preflightModule;
+}
+async function preflight(bytes) {
+  let mod = null;
+  try { mod = typeof Worker === "function" && GLUE_SRC ? await engineModule() : null; } catch { mod = null; }
+  if (!mod) return { ok: true, skipped: true };
+  const body = `
+self.onmessage = async (e) => {
+  try {
+    await __wbg_init({ module_or_path: e.data.mod });
+    const ed = JtdEditor.openWith(e.data.bytes, "{}");
+    const pages = ed.pageCount();
+    self.postMessage({ ok: true, pages });
+  } catch (err) {
+    self.postMessage({ ok: false, error: String((err && err.message) || err) });
+  }
+};`;
+  let url;
+  try {
+    url = URL.createObjectURL(new Blob([GLUE_SRC, body], { type: "text/javascript" }));
+    const w = new Worker(url, { type: "module" });
+    return await new Promise((resolve) => {
+      const done = (v) => { clearTimeout(t); w.terminate(); URL.revokeObjectURL(url); resolve(v); };
+      const t = setTimeout(() => done({ ok: false, error: "too large or damaged: timeout" }), PREFLIGHT_MS);
+      w.onmessage = (e) => done(e.data);
+      // the Worker itself could not start (a site policy): open as before
+      w.onerror = (e) => { e.preventDefault?.(); done({ ok: true, skipped: true }); };
+      w.postMessage({ mod, bytes });
+    });
+  } catch {
+    if (url) URL.revokeObjectURL(url);
+    return { ok: true, skipped: true };
+  }
+}
+
 async function boot() {
   translateDom();
   await initEngine();
@@ -1031,6 +1079,11 @@ function pageAtY(y) {
 async function openFile(file) {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const pf = await preflight(bytes);
+    if (!pf.ok) {
+      // out of memory inside the engine shows up as a trap ("unreachable") or an allocation message
+      throw new Error(/too large or damaged|unreachable|memory|allocation/i.test(pf.error) ? "too large or damaged" : pf.error);
+    }
     const ed = JtdEditor.open(bytes);
     S.setup = null;
     setEditor(ed, file.name.replace(/\.[^.]+$/, ""));
