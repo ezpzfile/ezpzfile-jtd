@@ -301,6 +301,8 @@ pub struct Status {
     pub modified: bool,
     pub in_table: bool,
     pub has_selection: bool,
+    /// The page limit was reached: only the first `pages` pages are shown.
+    pub truncated: bool,
     pub sheet: usize,
     pub sheets: Vec<String>,
 }
@@ -339,6 +341,8 @@ pub struct Editor {
     pub show_marks: bool,
     layout: Option<Layout>,
     pub modified: bool,
+    /// Most pages to lay out (see [`crate::limits::Limits::max_pages`]).
+    pub max_pages: usize,
 }
 
 impl Editor {
@@ -369,6 +373,7 @@ impl Editor {
             show_marks: true,
             layout: None,
             modified: false,
+            max_pages: crate::limits::Limits::default().max_pages,
         }
     }
 
@@ -1225,11 +1230,12 @@ impl Editor {
                     text: &self.preedit,
                 })
             };
-            let l = layout::layout(
+            let l = layout::layout_with(
                 &self.doc.sheets[self.sheet].blocks,
                 &self.setup,
                 self.show_marks,
                 pre.as_ref(),
+                self.max_pages,
             );
             self.layout = Some(l);
         }
@@ -1619,6 +1625,7 @@ impl Editor {
             modified: self.modified,
             in_table: self.in_table(),
             has_selection: self.has_selection(),
+            truncated: self.layout().truncated,
             sheet: self.sheet,
             sheets: self.doc.sheets.iter().map(|s| s.name.clone()).collect(),
         }

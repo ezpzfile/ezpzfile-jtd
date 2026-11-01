@@ -64,26 +64,54 @@ pub fn substreams(b: &[u8]) -> Result<Vec<Vec<u8>>> {
         .checked_add(block_size.saturating_mul(block_count))
         .ok_or_else(|| Error::Corrupt("Ssmg size overflow".into()))?;
     let block = |id: usize| -> &[u8] {
-        let s = 20 + id * block_size;
+        let Some(s) = id.checked_mul(block_size).and_then(|x| x.checked_add(20)) else {
+            return &[];
+        };
         if s >= b.len() || id >= block_count {
             &[]
         } else {
-            &b[s..(s + block_size).min(b.len())]
+            &b[s..s.saturating_add(block_size).min(b.len())]
         }
     };
-    let mut out = Vec::with_capacity(sub_count);
+    /*
+     * Every count here comes from the file, so each is checked against the
+     * bytes that are really there. A block may be listed only once per
+     * sub-stream would be the honest layout, but rather than reject reuse we
+     * cap the total: all sub-streams together may not exceed the container
+     * size (plus slack). Without this, a 100 KB file listing one 64 KB block
+     * 2,000 times expanded to 128 MB, and a length field of 4 GB was
+     * allocated up front.
+     */
+    let budget = b.len().saturating_mul(2).saturating_add(64 << 10);
+    let mut total = 0usize;
+    let mut out = Vec::with_capacity(sub_count.min(b.len() / 20 + 1));
     let mut o = dir;
     for _ in 0..sub_count {
         let (Some(_idx), Some(len), Some(n)) = (be32(b, o), be32(b, o + 8), be32(b, o + 12)) else {
             return Err(Error::Corrupt("truncated Ssmg directory".into()));
         };
-        let n = n as usize;
-        let mut data = Vec::with_capacity(len as usize);
-        for k in 0..n {
-            let id = be32(b, o + 20 + k * 4).unwrap_or(u32::MAX) as usize;
-            data.extend_from_slice(block(id));
+        // the block ids must be in the file: 4 bytes each
+        let listed = b.len().saturating_sub(o + 20) / 4;
+        let n = (n as usize).min(listed);
+        let len = (len as usize).min(n.saturating_mul(block_size));
+        if total.saturating_add(len) > budget {
+            return Err(Error::TooLarge(format!(
+                "DocumentText sub-streams claim {} bytes from a {}-byte stream",
+                total.saturating_add(len),
+                b.len()
+            )));
         }
-        data.truncate(len as usize);
+        let mut data = Vec::with_capacity(len.min(b.len()));
+        for k in 0..n {
+            if data.len() >= len {
+                break;
+            }
+            let id = be32(b, o + 20 + k * 4).unwrap_or(u32::MAX) as usize;
+            let blk = block(id);
+            let take = blk.len().min(len - data.len());
+            data.extend_from_slice(&blk[..take]);
+        }
+        total += data.len();
         out.push(data);
         o += 20 + n * 4;
     }
@@ -96,14 +124,21 @@ pub fn pieces(b: &[u8]) -> Result<Vec<Piece>> {
     let head = &subs[0];
     if head.starts_with(b"TextV.01") {
         let n = be32(head, 8).unwrap_or(0) as usize;
-        let end = (12 + n * 2).min(head.len());
+        let end = n.saturating_mul(2).saturating_add(12).min(head.len()).max(12.min(head.len()));
+        if head.len() < 12 {
+            return Ok(vec![Piece { units: Vec::new(), style: Vec::new() }]);
+        }
         return Ok(vec![Piece {
             units: to_units(&head[12..end]),
             style: head[end..].to_vec(),
         }]);
     }
     if head.starts_with(b"QLSTV.01") {
-        let count = be32(head, 8).unwrap_or(0) as usize;
+        // each piece entry is 8 bytes of the head; more cannot be listed
+        let count = (be32(head, 8).unwrap_or(0) as usize).min(head.len().saturating_sub(12) / 8);
+        // pieces may share a sub-stream; together they may not exceed the input (plus slack)
+        let budget = b.len().saturating_mul(2).saturating_add(64 << 10);
+        let mut total = 0usize;
         let mut out = Vec::new();
         for k in 0..count {
             let (Some(n), Some(si)) = (be32(head, 12 + k * 8), be32(head, 16 + k * 8)) else {
@@ -114,7 +149,14 @@ pub fn pieces(b: &[u8]) -> Result<Vec<Piece>> {
                     "QLST points to missing sub-stream {si}"
                 )));
             };
-            let end = (n as usize * 2).min(d.len());
+            let end = (n as usize).saturating_mul(2).min(d.len());
+            total = total.saturating_add(d.len());
+            if total > budget {
+                return Err(Error::TooLarge(format!(
+                    "DocumentText pieces repeat {total} bytes from a {}-byte stream",
+                    b.len()
+                )));
+            }
             out.push(Piece {
                 units: to_units(&d[..end]),
                 style: d[end..].to_vec(),

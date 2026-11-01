@@ -241,6 +241,8 @@ const EN = {
   "「{0}」は変更されています。保存しないと変更は失われます。": "\"{0}\" has changes. If you don't save, they will be lost.",
   "保存する": "Save",
   "起動できませんでした: {0}": "Couldn't start: {0}",
+  "ページが多すぎるため、最初の {0} ページだけを表示しています": "This document has too many pages; only the first {0} are shown",
+  "ファイルが大きすぎるか、壊れています": "The file is too large or damaged",
 };
 
 const DICT = LANG === "en" ? EN : null;

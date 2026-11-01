@@ -121,6 +121,30 @@ const doc = new JtdDocument(new Uint8Array(await file.arrayBuffer()));
 element.innerHTML = doc.html();
 ```
 
+### 信頼できないファイルを開くとき
+
+`.jtd` はファイルの中に長さや個数の欄を持っています。細工されたファイルが実際より大きな値を書いていても、
+エンジンはそれをそのまま信じず、実際にあるバイト数と次の上限で止めます（既定値は実在の文書よりずっと大きい値です）。
+
+| 上限 | 既定値 | 超えたとき |
+|---|---|---|
+| `maxBytes` | 256 MB | 「too large or damaged」エラー |
+| `maxTextUnits` | 800 万字 | 同上 |
+| `maxExpand` | ファイルの 4 倍 | 本文ストリームの合計がこれを超えると同上 |
+| `maxSheets` | 64 | それ以降のシートは読まず警告 |
+| `maxPages` | 2,000 | そこでレイアウトを止める（`statusJson().truncated`） |
+
+他のサービスに組み込む場合は、上限を下げて Web Worker の中で動かすのがおすすめです。
+`web/worker/ezpzjtd-safe.js` がそのまま使えます（時間切れのときは Worker ごと止めます）。
+
+```js
+import { readJtdSafely } from "./worker/ezpzjtd-safe.js";
+const { result } = await readJtdSafely(bytes, { want: "html", limits: { maxPages: 300 }, timeoutMs: 10000 });
+// または直接: JtdDocument.withLimits(bytes, '{"maxPages":300}') / JtdEditor.openWith(bytes, '{"maxPages":300}')
+```
+
+Rust では `ezpzjtd_core::open_with(bytes, &Limits { max_pages: 300, ..Default::default() })`。
+
 ## ファイル形式
 
 [`docs/spec/JTD-FORMAT.md`](docs/spec/JTD-FORMAT.md)（英語）が作業中の仕様書です。

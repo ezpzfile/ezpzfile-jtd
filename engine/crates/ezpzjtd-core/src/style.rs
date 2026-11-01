@@ -88,7 +88,9 @@ impl CharStyle {
             bold: flag_on(flags, BOLD_SHIFT).then_some(true),
             size_pt: g(2)
                 .filter(|&v| v > 0)
-                .map(|v| ((v as f32) / 35.2778 * 2.0).round() / 2.0),
+                .map(|v| ((v as f32) / 35.2778 * 2.0).round() / 2.0)
+                // a crafted size (up to 4 billion) made every character its own page
+                .map(|pt| pt.clamp(1.0, 999.0)),
             font: g(3).filter(|&v| flag16(v)).map(|v| v as u16),
             font_latin: g(8).filter(|&v| flag16(v)).map(|v| v as u16),
             scale_x: g(4).filter(|&v| v > 0 && v != 100).map(|v| v as u8),

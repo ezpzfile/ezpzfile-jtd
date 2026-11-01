@@ -68,6 +68,34 @@ pub fn line_width(k: u8) -> f32 {
 }
 
 impl PageSetup {
+    /// The same page with values a layout can use: paper 50 to 1500 mm, margins
+    /// leaving at least 10% of the page, 4 to 400 characters, 2 to 400 lines,
+    /// 4 to 100 pt. Values read from a file are already cut this way
+    /// (`page.rs`); this also covers values set from outside (the page dialog,
+    /// JSON from an embedding page).
+    pub fn sane(&self) -> PageSetup {
+        let d = PageSetup::default();
+        let fin = |v: f32, lo: f32, hi: f32, def: f32| if v.is_finite() && (lo..=hi).contains(&v) { v } else { def };
+        let w = fin(self.width_mm, 50.0, 1500.0, d.width_mm);
+        let h = fin(self.height_mm, 50.0, 1500.0, d.height_mm);
+        let m = |a: f32, z: f32, total: f32, da: f32, dz: f32| {
+            let ok = a.is_finite() && z.is_finite() && a >= 0.0 && z >= 0.0 && a + z < total * 0.9;
+            if ok { (a, z) } else { (da.min(total * 0.2), dz.min(total * 0.2)) }
+        };
+        let (t, b) = m(self.margin_top_mm, self.margin_bottom_mm, h, d.margin_top_mm, d.margin_bottom_mm);
+        let (l, r) = m(self.margin_left_mm, self.margin_right_mm, w, d.margin_left_mm, d.margin_right_mm);
+        PageSetup {
+            width_mm: w,
+            height_mm: h,
+            margin_top_mm: t,
+            margin_bottom_mm: b,
+            margin_left_mm: l,
+            margin_right_mm: r,
+            chars_per_line: self.chars_per_line.clamp(4, 400),
+            lines_per_page: self.lines_per_page.clamp(2, 400),
+            font_pt: fin(self.font_pt, 4.0, 100.0, d.font_pt),
+        }
+    }
     pub fn page_w(&self) -> f32 {
         self.width_mm * MM
     }
@@ -194,6 +222,9 @@ pub struct LineBox {
 pub struct Layout {
     pub pages: Vec<Page>,
     pub lines: Vec<LineBox>,
+    /// The page limit ([`crate::limits::Limits::max_pages`]) was reached and
+    /// the rest of the sheet was not laid out.
+    pub truncated: bool,
 }
 
 /// Preedit (IME composition) text shown at a position, not part of the model.
@@ -229,10 +260,18 @@ struct Ctx<'a> {
     out: Layout,
     page: usize,
     y: f32,
+    max_pages: usize,
 }
 
 impl<'a> Ctx<'a> {
     fn new_page(&mut self) {
+        // stop at the page limit: keep drawing onto the last page and let the
+        // callers see `truncated` and stop
+        if self.out.pages.len() >= self.max_pages {
+            self.out.truncated = true;
+            self.y = self.setup.top();
+            return;
+        }
         self.out.pages.push(Page {
             w: self.setup.page_w(),
             h: self.setup.page_h(),
@@ -383,6 +422,9 @@ fn layout_para(
     let nlines = ranges.len();
     let mut model_pos = 0usize;
     for (li, &(a, b)) in ranges.iter().enumerate() {
+        if ctx.out.truncated {
+            break;
+        }
         let line = &gs[a..b];
         let (left, right) = if li == 0 { first } else { (left, right) };
         let width = (right - left).max(base);
@@ -393,11 +435,15 @@ fn layout_para(
         let has_ruby = line
             .iter()
             .any(|g| g.run != usize::MAX && p.runs[g.run].ruby.is_some());
-        let mut h = pitch;
         let need = max_size * 1.25 + if has_ruby { max_size * 0.5 } else { 0.0 };
-        while h < need {
-            h += pitch;
-        }
+        // whole line pitches that hold the tallest character (computed, not
+        // counted up one pitch at a time: a tiny pitch made that loop run
+        // millions of times per line)
+        let h = if pitch > 0.0 && pitch.is_finite() {
+            pitch * (need / pitch).ceil().max(1.0)
+        } else {
+            need.max(1.0)
+        };
         if !in_cell && ctx.y + h > setup.bottom() + 0.5 && ctx.y > setup.top() + 0.5 {
             ctx.new_page();
         }
@@ -619,6 +665,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                 out: Layout::default(),
                 page: 0,
                 y: 0.0,
+                max_pages: usize::MAX,
             };
             scratch.out.pages.push(Page {
                 w: 0.0,
@@ -718,16 +765,33 @@ pub fn layout(
     show_marks: bool,
     pre: Option<&Preedit>,
 ) -> Layout {
+    layout_with(blocks, setup, show_marks, pre, crate::limits::Limits::default().max_pages)
+}
+
+/// [`layout`] with a page limit. Past it the layout stops and
+/// [`Layout::truncated`] is set.
+pub fn layout_with(
+    blocks: &[Block],
+    setup: &PageSetup,
+    show_marks: bool,
+    pre: Option<&Preedit>,
+    max_pages: usize,
+) -> Layout {
+    let setup = &setup.sane();
     let mut ctx = Ctx {
         setup,
         show_marks,
         out: Layout::default(),
         page: 0,
         y: 0.0,
+        max_pages: max_pages.max(1),
     };
     ctx.new_page();
     let mut flat = 0usize;
     for b in blocks {
+        if ctx.out.truncated {
+            break;
+        }
         match b {
             Block::Paragraph(p) => {
                 if p.page_break_before && ctx.y > setup.top() + 0.5 {

@@ -117,6 +117,30 @@ const doc = new JtdDocument(new Uint8Array(await file.arrayBuffer()));
 element.innerHTML = doc.html();
 ```
 
+### 믿을 수 없는 파일을 열 때
+
+`.jtd` 안에는 길이·개수를 적는 칸이 있습니다. 조작된 파일이 실제보다 큰 값을 적어도 엔진은 그대로 믿지 않고,
+실제로 있는 바이트 수와 아래 상한에서 멈춥니다(기본값은 실제 문서보다 훨씬 큽니다).
+
+| 상한 | 기본값 | 넘으면 |
+|---|---|---|
+| `maxBytes` | 256 MB | "too large or damaged" 오류 |
+| `maxTextUnits` | 800만 자 | 같음 |
+| `maxExpand` | 파일의 4배 | 본문 스트림 합계가 이보다 크면 같음 |
+| `maxSheets` | 64 | 그 뒤 시트는 읽지 않고 경고 |
+| `maxPages` | 2,000 | 거기서 배치를 멈춤(`statusJson().truncated`) |
+
+다른 서비스에 넣어 쓸 때는 상한을 낮추고 Web Worker 안에서 돌리세요. `web/worker/ezpzjtd-safe.js` 가
+그렇게 해 주고, 시간을 넘기면 Worker 를 통째로 멈춥니다.
+
+```js
+import { readJtdSafely } from "./worker/ezpzjtd-safe.js";
+const { result } = await readJtdSafely(bytes, { want: "html", limits: { maxPages: 300 }, timeoutMs: 10000 });
+// 직접 부르려면: JtdDocument.withLimits(bytes, '{"maxPages":300}') / JtdEditor.openWith(bytes, '{"maxPages":300}')
+```
+
+Rust 에서는 `ezpzjtd_core::open_with(bytes, &Limits { max_pages: 300, ..Default::default() })`.
+
 ## 파일 형식
 
 [`docs/spec/JTD-FORMAT.md`](docs/spec/JTD-FORMAT.md)(영어)가 작업 중인 규격서입니다.

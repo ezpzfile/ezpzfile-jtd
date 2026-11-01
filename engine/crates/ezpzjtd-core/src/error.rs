@@ -6,6 +6,8 @@ pub enum Error {
     NotJtd(String),
     Corrupt(String),
     Unsupported(String),
+    /// The file asks for more than the reader's limits allow (see `limits.rs`).
+    TooLarge(String),
 }
 
 impl fmt::Display for Error {
@@ -15,6 +17,7 @@ impl fmt::Display for Error {
             Error::NotJtd(m) => write!(f, "not an Ichitaro document: {m}"),
             Error::Corrupt(m) => write!(f, "corrupt file: {m}"),
             Error::Unsupported(m) => write!(f, "unsupported: {m}"),
+            Error::TooLarge(m) => write!(f, "too large or damaged: {m}"),
         }
     }
 }

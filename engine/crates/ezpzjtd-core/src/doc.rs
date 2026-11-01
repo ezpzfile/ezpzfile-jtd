@@ -1,6 +1,7 @@
 //! Document model assembled from the raw layers.
 
 use crate::cfb::{Cfb, EntryKind};
+use crate::limits::Limits;
 use crate::error::{Error, Result};
 use crate::props::{self, Summary};
 use crate::ssmg;
@@ -543,6 +544,35 @@ impl Document {
 
 /// Open any supported Ichitaro file.
 pub fn open(bytes: Vec<u8>) -> Result<Document> {
+    open_with(bytes, &Limits::default())
+}
+
+/// Running totals checked against [`Limits`] while sheets are read.
+struct Budget {
+    bytes_left: usize,
+    units_left: usize,
+}
+
+/// [`open`] with explicit [`Limits`]. Files that ask for more than the limits
+/// allow fail with [`Error::TooLarge`]; extra sheets beyond `max_sheets` are
+/// skipped with a warning.
+pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
+    if bytes.len() > limits.max_bytes {
+        return Err(Error::TooLarge(format!(
+            "file is {} bytes; the limit is {}",
+            bytes.len(),
+            limits.max_bytes
+        )));
+    }
+    // Sheets may point at the same stored data, so the text streams of all
+    // sheets together may not exceed `max_expand` times the file.
+    let mut budget = Budget {
+        bytes_left: bytes
+            .len()
+            .saturating_mul(limits.max_expand.max(1))
+            .saturating_add(1 << 20),
+        units_left: limits.max_text_units,
+    };
     if bytes.starts_with(b"{\\rtf") {
         return Err(Error::NotJtd(
             "this file is RTF (rich text) with a .jtd name; open it in any word processor".into(),
@@ -563,7 +593,7 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
     let format;
     if cfb.find("/DocumentText").is_some() {
         format = "jtd".to_string();
-        sheets.push(read_sheet(&cfb, "", "Sheet 1", &mut warnings)?);
+        sheets.push(read_sheet(&cfb, "", "Sheet 1", &mut warnings, &mut budget)?);
         // Multi-sheet documents keep further sheets in /ObjectSheets/DocSheet/DOCS_xxxx.
         let names = cfb
             .read("/DocItemInfo")
@@ -579,13 +609,26 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
             .map(|e| e.path.clone())
             .collect();
         extra.sort();
+        if extra.len() + 1 > limits.max_sheets {
+            warnings.push(format!(
+                "{} sheets; only the first {} were read",
+                extra.len() + 1,
+                limits.max_sheets
+            ));
+            extra.truncate(limits.max_sheets.saturating_sub(1));
+        }
         for (k, p) in extra.iter().enumerate() {
             let name = names
                 .get(k + 1)
                 .cloned()
                 .unwrap_or_else(|| format!("Sheet {}", k + 2));
-            match read_sheet(&cfb, p, &name, &mut warnings) {
+            match read_sheet(&cfb, p, &name, &mut warnings, &mut budget) {
                 Ok(s) => sheets.push(s),
+                // out of budget: stop reading sheets rather than skip one and try the next
+                Err(Error::TooLarge(m)) => {
+                    warnings.push(format!("{p}: {m}"));
+                    break;
+                }
                 Err(e) => warnings.push(format!("{p}: {e}")),
             }
         }
@@ -629,12 +672,36 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
     })
 }
 
-fn read_sheet(cfb: &Cfb, base: &str, name: &str, warnings: &mut Vec<String>) -> Result<Sheet> {
+fn read_sheet(
+    cfb: &Cfb,
+    base: &str,
+    name: &str,
+    warnings: &mut Vec<String>,
+    budget: &mut Budget,
+) -> Result<Sheet> {
     let path = format!("{base}/DocumentText");
-    let raw = cfb
-        .read(&path)
+    let entry = cfb
+        .find(&path)
         .ok_or_else(|| Error::NotJtd(format!("missing {path}")))?;
-    let blocks = blocks_from_document_text(&raw, warnings)?;
+    // the stored size can claim anything; what is read is bounded by the file
+    if (entry.size as u128) > budget.bytes_left as u128 {
+        return Err(Error::TooLarge(format!(
+            "{path} claims {} bytes",
+            entry.size
+        )));
+    }
+    let raw = cfb.read_entry(entry);
+    budget.bytes_left = budget.bytes_left.saturating_sub(raw.len());
+    let (units, map) = units_and_styles(&raw)?;
+    if units.len() > budget.units_left {
+        return Err(Error::TooLarge(format!(
+            "{} text units; the limit left is {}",
+            units.len(),
+            budget.units_left
+        )));
+    }
+    budget.units_left -= units.len();
+    let blocks = build_blocks(&units, &map, warnings, false).0;
     Ok(Sheet {
         name: name.to_string(),
         path: if base.is_empty() {

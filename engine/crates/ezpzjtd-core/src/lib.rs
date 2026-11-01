@@ -26,6 +26,7 @@ pub mod error;
 pub mod export;
 pub mod jtdw;
 pub mod layout;
+pub mod limits;
 pub mod page;
 pub mod pdf;
 pub mod props;
@@ -34,5 +35,6 @@ pub mod ssmg;
 pub mod style;
 pub mod text;
 
-pub use doc::{open, Document};
+pub use doc::{open, open_with, Document};
+pub use limits::Limits;
 pub use error::{Error, Result};

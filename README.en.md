@@ -128,6 +128,31 @@ const doc = new JtdDocument(new Uint8Array(await file.arrayBuffer()));
 element.innerHTML = doc.html();
 ```
 
+### Opening untrusted files
+
+A `.jtd` carries its own length and count fields. When a crafted file claims more than it holds, the engine
+does not trust it: every count is checked against the bytes that are really there, and reading stops at
+these limits (the defaults are far above any real document).
+
+| Limit | Default | When exceeded |
+|---|---|---|
+| `maxBytes` | 256 MB | "too large or damaged" error |
+| `maxTextUnits` | 8 million | same |
+| `maxExpand` | 4 × the file | text streams together larger than this: same |
+| `maxSheets` | 64 | further sheets skipped with a warning |
+| `maxPages` | 2,000 | layout stops there (`statusJson().truncated`) |
+
+When you embed the engine in another service, lower the limits and run it in a Web Worker.
+`web/worker/ezpzjtd-safe.js` does that for you and terminates the worker on a timeout.
+
+```js
+import { readJtdSafely } from "./worker/ezpzjtd-safe.js";
+const { result } = await readJtdSafely(bytes, { want: "html", limits: { maxPages: 300 }, timeoutMs: 10000 });
+// or directly: JtdDocument.withLimits(bytes, '{"maxPages":300}') / JtdEditor.openWith(bytes, '{"maxPages":300}')
+```
+
+In Rust: `ezpzjtd_core::open_with(bytes, &Limits { max_pages: 300, ..Default::default() })`.
+
 ## The format
 
 [`docs/spec/JTD-FORMAT.md`](docs/spec/JTD-FORMAT.md) is the working specification.

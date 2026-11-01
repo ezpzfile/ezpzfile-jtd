@@ -1039,11 +1039,14 @@ async function openFile(file) {
     S.ext = (/\.([a-z0-9]{1,5})$/i.exec(file.name)?.[1] || "none").toLowerCase();
     setHasDoc(true);
     HOST.event("file", { ext: S.ext, pages: ed.pageCount() });
+    // page limit reached (a huge or damaged file): say so instead of trying to draw them all
+    if (JSON.parse(ed.statusJson()).truncated) toast(tr("ページが多すぎるため、最初の {0} ページだけを表示しています", ed.pageCount()));
     const s = JSON.parse(ed.summaryJson());
     if (s.template && /[\\:]/.test(s.template)) toast(tr("この文書には元の保存場所が残っています（文書情報）"));
   } catch (err) {
     HOST.event("open_fail", { error_code: HOST.errorKind(err), stage: "read" });
-    showInfo(tr("開けませんでした"), [[tr("ファイル"), file.name], [tr("理由"), String(err.message || err)]]);
+    const why = String(err.message || err);
+    showInfo(tr("開けませんでした"), [[tr("ファイル"), file.name], [tr("理由"), /too large or damaged/.test(why) ? tr("ファイルが大きすぎるか、壊れています") : why]]);
   }
 }
 

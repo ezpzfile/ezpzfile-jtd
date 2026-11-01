@@ -31,6 +31,23 @@ impl JtdDocument {
             inner: ezpzjtd_core::open(bytes.to_vec()).map_err(js_err)?,
         })
     }
+    /// Open with limits for untrusted files, as JSON:
+    /// `{"maxBytes":…, "maxTextUnits":…, "maxSheets":…, "maxPages":…, "maxExpand":…}`.
+    /// Missing keys keep the defaults (see `limits.rs`). A file over a limit
+    /// fails with a "too large or damaged" error instead of using up memory.
+    #[wasm_bindgen(js_name = withLimits)]
+    pub fn with_limits(bytes: &[u8], limits: &str) -> Result<JtdDocument, JsError> {
+        let l = ezpzjtd_core::Limits::from_json(limits);
+        Ok(JtdDocument {
+            inner: ezpzjtd_core::open_with(bytes.to_vec(), &l).map_err(js_err)?,
+        })
+    }
+    /// Problems tolerated while reading (JSON array of strings), such as sheets
+    /// skipped at the sheet limit.
+    #[wasm_bindgen(js_name = warningsJson)]
+    pub fn warnings_json(&self) -> String {
+        json(&self.inner.warnings)
+    }
     pub fn text(&self) -> String {
         self.inner.plain_text()
     }
@@ -83,6 +100,22 @@ impl JtdEditor {
         let doc = ezpzjtd_core::open(bytes.to_vec()).map_err(js_err)?;
         Ok(JtdEditor {
             ed: Editor::new(doc),
+            original: Some(bytes.to_vec()),
+            warnings: Vec::new(),
+        })
+    }
+
+    /// [`JtdEditor::open`] with limits for untrusted files (same JSON as
+    /// `JtdDocument.withLimits`). `maxPages` also caps the layout: past it,
+    /// `statusJson().truncated` is true and only the first pages are drawn.
+    #[wasm_bindgen(js_name = openWith)]
+    pub fn open_with(bytes: &[u8], limits: &str) -> Result<JtdEditor, JsError> {
+        let l = ezpzjtd_core::Limits::from_json(limits);
+        let doc = ezpzjtd_core::open_with(bytes.to_vec(), &l).map_err(js_err)?;
+        let mut ed = Editor::new(doc);
+        ed.max_pages = l.max_pages;
+        Ok(JtdEditor {
+            ed,
             original: Some(bytes.to_vec()),
             warnings: Vec::new(),
         })
