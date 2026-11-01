@@ -205,6 +205,9 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 Built on the published research of [OpenJTD](https://github.com/KimEJ/OpenJTD) and
 [Tika-JTD](https://github.com/KHiyowa/Tika-JTD). See [NOTICE](NOTICE).
 
+The memory problem fixed in 0.3.2 (a crafted file could make memory use and page count grow without end)
+was reported privately by HIDANO Masaki of [KUKAN](https://github.com/kukan-project/kukan). Thank you.
+
 ## License
 
 MIT License ([LICENSE](LICENSE)). You may use, change, share and sell it freely. Keep the copyright notice

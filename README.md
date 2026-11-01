@@ -194,6 +194,9 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 [OpenJTD](https://github.com/KimEJ/OpenJTD) と [Tika-JTD](https://github.com/KHiyowa/Tika-JTD) の
 公開研究をもとにしています。[NOTICE](NOTICE) を参照してください。
 
+0.3.2 のメモリ使用の問題（細工されたファイルでメモリとページ数が増え続ける）は、[KUKAN](https://github.com/kukan-project/kukan) の HIDANO Masaki さんから
+非公開でご報告いただき修正しました。ありがとうございました。
+
 ## ライセンス
 
 MIT ライセンス（[LICENSE](LICENSE)）。使用・改変・再配布・商用利用は自由です。コピーや改変版には、

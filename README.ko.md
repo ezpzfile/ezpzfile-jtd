@@ -190,6 +190,9 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 [OpenJTD](https://github.com/KimEJ/OpenJTD)와 [Tika-JTD](https://github.com/KHiyowa/Tika-JTD)의
 공개 연구를 바탕으로 했습니다. [NOTICE](NOTICE)를 보세요.
 
+0.3.2에서 고친 메모리 사용 문제(조작된 파일로 메모리와 쪽 수가 끝없이 늘어나는 문제)는 [KUKAN](https://github.com/kukan-project/kukan)의
+HIDANO Masaki 님이 비공개로 알려 주셨습니다. 감사합니다.
+
 ## 라이선스
 
 MIT 라이선스([LICENSE](LICENSE)). 쓰기·고치기·다시 배포·상업적 이용 모두 자유입니다. 복사본이나 고친 판에는
