@@ -139,6 +139,7 @@ these limits (the defaults are far above any real document).
 | `maxBytes` | 256 MB | "too large or damaged" error |
 | `maxTextUnits` | 8 million | same |
 | `maxExpand` | 4 × the file | text streams together larger than this: same |
+| `maxStyleEntries` | 2 million | style properties kept for all changes of character style together: same (0.3.3) |
 | `maxSheets` | 64 | further sheets skipped with a warning |
 | `maxPages` | 2,000 | layout stops there (`statusJson().truncated`) |
 
@@ -205,8 +206,9 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 Built on the published research of [OpenJTD](https://github.com/KimEJ/OpenJTD) and
 [Tika-JTD](https://github.com/KHiyowa/Tika-JTD). See [NOTICE](NOTICE).
 
-The memory problem fixed in 0.3.2 (a crafted file could make memory use and page count grow without end)
-was reported privately by HIDANO Masaki of [KUKAN](https://github.com/kukan-project/kukan). Thank you.
+The memory problems fixed in 0.3.2 and 0.3.3 (a crafted file could make memory use and page count grow
+without end; style properties were copied for every style change and every character) were reported privately
+by HIDANO Masaki of [KUKAN](https://github.com/kukan-project/kukan). Thank you.
 
 ## License
 

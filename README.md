@@ -131,6 +131,7 @@ element.innerHTML = doc.html();
 | `maxBytes` | 256 MB | 「too large or damaged」エラー |
 | `maxTextUnits` | 800 万字 | 同上 |
 | `maxExpand` | ファイルの 4 倍 | 本文ストリームの合計がこれを超えると同上 |
+| `maxStyleEntries` | 200 万 | 文字書式の切り替えで保持する属性の総数がこれを超えると同上（0.3.3） |
 | `maxSheets` | 64 | それ以降のシートは読まず警告 |
 | `maxPages` | 2,000 | そこでレイアウトを止める（`statusJson().truncated`） |
 
@@ -194,8 +195,8 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 [OpenJTD](https://github.com/KimEJ/OpenJTD) と [Tika-JTD](https://github.com/KHiyowa/Tika-JTD) の
 公開研究をもとにしています。[NOTICE](NOTICE) を参照してください。
 
-0.3.2 のメモリ使用の問題（細工されたファイルでメモリとページ数が増え続ける）は、[KUKAN](https://github.com/kukan-project/kukan) の HIDANO Masaki さんから
-非公開でご報告いただき修正しました。ありがとうございました。
+0.3.2 と 0.3.3 のメモリ使用の問題（細工されたファイルでメモリとページ数が増え続ける、書式の属性が切り替えや文字ごとに複製される）は、
+[KUKAN](https://github.com/kukan-project/kukan) の HIDANO Masaki さんから非公開でご報告いただき修正しました。ありがとうございました。
 
 ## ライセンス
 

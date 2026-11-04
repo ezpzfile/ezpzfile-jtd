@@ -127,6 +127,7 @@ element.innerHTML = doc.html();
 | `maxBytes` | 256 MB | "too large or damaged" 오류 |
 | `maxTextUnits` | 800만 자 | 같음 |
 | `maxExpand` | 파일의 4배 | 본문 스트림 합계가 이보다 크면 같음 |
+| `maxStyleEntries` | 200만 | 글자 서식이 바뀔 때마다 보관하는 속성 수의 합이 이보다 크면 같음(0.3.3) |
 | `maxSheets` | 64 | 그 뒤 시트는 읽지 않고 경고 |
 | `maxPages` | 2,000 | 거기서 배치를 멈춤(`statusJson().truncated`) |
 
@@ -190,8 +191,8 @@ cd engine && EZPZJTD_CORPUS=$PWD/../corpus/local cargo test
 [OpenJTD](https://github.com/KimEJ/OpenJTD)와 [Tika-JTD](https://github.com/KHiyowa/Tika-JTD)의
 공개 연구를 바탕으로 했습니다. [NOTICE](NOTICE)를 보세요.
 
-0.3.2에서 고친 메모리 사용 문제(조작된 파일로 메모리와 쪽 수가 끝없이 늘어나는 문제)는 [KUKAN](https://github.com/kukan-project/kukan)의
-HIDANO Masaki 님이 비공개로 알려 주셨습니다. 감사합니다.
+0.3.2와 0.3.3에서 고친 메모리 사용 문제(조작된 파일로 메모리와 쪽 수가 끝없이 늘어나는 문제, 서식 속성이 서식이 바뀔 때마다·글자마다 복사되는 문제)는
+[KUKAN](https://github.com/kukan-project/kukan)의 HIDANO Masaki 님이 비공개로 알려 주셨습니다. 감사합니다.
 
 ## 라이선스
 
