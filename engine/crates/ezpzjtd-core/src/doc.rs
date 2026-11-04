@@ -551,6 +551,8 @@ pub fn open(bytes: Vec<u8>) -> Result<Document> {
 struct Budget {
     bytes_left: usize,
     units_left: usize,
+    /// Style property entries left ([`Limits::max_style_entries`]).
+    style_left: usize,
 }
 
 /// [`open`] with explicit [`Limits`]. Files that ask for more than the limits
@@ -572,6 +574,7 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
             .saturating_mul(limits.max_expand.max(1))
             .saturating_add(1 << 20),
         units_left: limits.max_text_units,
+        style_left: limits.max_style_entries,
     };
     if bytes.starts_with(b"{\\rtf") {
         return Err(Error::NotJtd(
@@ -692,7 +695,7 @@ fn read_sheet(
     }
     let raw = cfb.read_entry(entry);
     budget.bytes_left = budget.bytes_left.saturating_sub(raw.len());
-    let (units, map) = units_and_styles(&raw)?;
+    let (units, map) = units_and_styles_with(&raw, &mut budget.style_left)?;
     if units.len() > budget.units_left {
         return Err(Error::TooLarge(format!(
             "{} text units; the limit left is {}",
@@ -721,12 +724,19 @@ pub fn blocks_from_document_text(raw: &[u8], warnings: &mut Vec<String>) -> Resu
 
 /// All text units of a `/DocumentText` stream (pieces joined) and their styles.
 pub fn units_and_styles(raw: &[u8]) -> Result<(Vec<u16>, StyleMap)> {
+    let mut budget = Limits::default().max_style_entries;
+    units_and_styles_with(raw, &mut budget)
+}
+
+/// [`units_and_styles`] spending at most `style_budget` style property entries
+/// (see [`Limits::max_style_entries`]); what was used is taken off it.
+pub fn units_and_styles_with(raw: &[u8], style_budget: &mut usize) -> Result<(Vec<u16>, StyleMap)> {
     let pieces = ssmg::pieces(raw)?;
     let mut units = Vec::new();
     let mut spans = Vec::new();
     for p in pieces {
         let off = units.len();
-        for mut s in style::spans(&p.style, p.units.len()) {
+        for mut s in style::spans_with(&p.style, p.units.len(), style_budget)? {
             s.start += off;
             spans.push(s);
         }
@@ -784,9 +794,10 @@ struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     fn style_at(&self, unit: usize) -> CharStyle {
+        // shares the span's property map: this runs for every character
         self.map
-            .at(unit)
-            .map(CharStyle::from_raw)
+            .at_shared(unit)
+            .map(CharStyle::from_shared)
             .unwrap_or_default()
     }
 

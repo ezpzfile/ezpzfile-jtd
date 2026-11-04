@@ -230,3 +230,120 @@ fn public_layouts_still_open() {
     let text: String = p.iter().map(|x| String::from_utf16_lossy(&x.units)).collect();
     assert_eq!(text, "一太郎文書\u{d}");
 }
+
+// ---- 2nd private report (HIDANO Masaki, KUKAN project, 2026-11-02): the
+// property map of a style was copied for every style event and every glyph.
+
+/// /DocumentText with one text sub-stream: `units`, then the raw style events.
+fn styled_text(units: &[u16], style: &[u8]) -> Vec<u8> {
+    let mut payload = b"TextV.01".to_vec();
+    payload.extend(be(units.len() as u32));
+    for u in units {
+        payload.extend(u.to_be_bytes());
+    }
+    payload.extend(style);
+    let len = payload.len();
+    let nb = len.div_ceil(256);
+    payload.resize(nb * 256, 0);
+    let mut b = b"SsmgV.01".to_vec();
+    b.extend(be(1));
+    b.extend(be(256));
+    b.extend(be(nb as u32));
+    b.extend(&payload);
+    b.extend(be(0));
+    b.extend(be(0));
+    b.extend(be(len as u32));
+    b.extend(be(nb as u32));
+    b.extend(be(nb as u32));
+    for i in 0..nb as u32 {
+        b.extend(be(i));
+    }
+    b.extend(be(0));
+    b
+}
+
+/// A style event setting every property id the format allows (0..=254).
+fn set_every_property(v: u32) -> Vec<u8> {
+    let mut e = vec![0xfe];
+    for id in 0..=254u8 {
+        e.extend([id, 4]);
+        e.extend(be(v));
+    }
+    e.extend([0xff, 0x00]);
+    e
+}
+
+fn chars(n: usize, per_paragraph: usize) -> Vec<u16> {
+    let mut u = Vec::new();
+    for i in 0..n {
+        u.push(0x3042);
+        if (i + 1) % per_paragraph == 0 {
+            u.push(0x0a);
+        }
+    }
+    u
+}
+
+#[test]
+fn d_many_style_events_hit_the_style_limit() {
+    // 255 properties, then 200,000 six-byte events that each change one value:
+    // before 0.3.3 every event copied the whole map (about 700 MB, 6 s)
+    let n = 200_000;
+    let mut st = set_every_property(0x8000_0000);
+    for i in 0..n as u32 {
+        st.extend([0xfe, 0x00, 0x01, (i & 0xff) as u8 | 1, 0xff, 0x00]);
+    }
+    let file = with_text_stream(styled_text(&chars(n + 10, 100), &st));
+    let r = quick(|| open(file));
+    assert!(matches!(r, Err(Error::TooLarge(_))), "{:?}", r.err());
+}
+
+#[test]
+fn e_style_limit_is_configurable() {
+    let mut st = set_every_property(0x8000_0000);
+    for i in 0..100u32 {
+        st.extend([0xfe, 0x00, 0x01, i as u8 | 1, 0xff, 0x00]);
+    }
+    let file = with_text_stream(styled_text(&chars(200, 50), &st));
+    assert!(open(file.clone()).is_ok());
+    let tight = Limits::from_json(r#"{"maxStyleEntries": 1000}"#);
+    assert_eq!(tight.max_style_entries, 1000);
+    assert!(matches!(open_with(file, &tight), Err(Error::TooLarge(_))));
+}
+
+#[test]
+fn f_one_large_style_over_many_glyphs_stays_small() {
+    // one 255-entry style over 400,000 characters in one paragraph: before
+    // 0.3.3 each glyph copied the style and its map (about 1.4 GB, 9 s)
+    let n = 400_000;
+    let mut st = set_every_property(0x8000_0000);
+    st.push(0x00);
+    st.extend(be(n as u32));
+    let file = with_text_stream(styled_text(&chars(n, n + 1), &st));
+    quick(|| {
+        let doc = open(file).expect("opens");
+        let mut ed = Editor::new(doc);
+        let l = ed.layout();
+        assert!(l.truncated, "cut at the page limit");
+    });
+}
+
+#[test]
+fn g_runs_share_one_property_map() {
+    let st = set_every_property(0x8000_0000);
+    let file = with_text_stream(styled_text(&chars(30, 10), &st));
+    let doc = open(file).expect("opens");
+    let runs: Vec<_> = doc.sheets[0]
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            ezpzjtd_core::doc::Block::Paragraph(p) => p.runs.first(),
+            _ => None,
+        })
+        .collect();
+    assert!(runs.len() >= 3, "{} paragraphs", runs.len());
+    assert_eq!(runs[0].style.raw.len(), 255);
+    for r in &runs[1..] {
+        assert!(std::rc::Rc::ptr_eq(&runs[0].style.raw, &r.style.raw), "copied, not shared");
+    }
+}

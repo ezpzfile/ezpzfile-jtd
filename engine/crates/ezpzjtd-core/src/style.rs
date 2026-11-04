@@ -17,9 +17,22 @@
 //! `docs/spec/JTD-FORMAT.md`). Each field is marked with how sure we are.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
+
+use crate::error::{Error, Result};
 
 /// Raw property id → value (big-endian, up to 4 bytes).
 pub type RawProps = BTreeMap<u8, u32>;
+
+/// A property map shared by every span, run and glyph in the same style state.
+///
+/// Before 0.3.3 each style event, run and glyph held its own copy of the map
+/// (up to 255 entries), so a small file with many style events or one long
+/// styled paragraph made the reader allocate gigabytes (private report by
+/// HIDANO Masaki, KUKAN project, 2026-11-02). Now a state is copied only when
+/// an event changes it, and those copies are counted against
+/// [`crate::limits::Limits::max_style_entries`].
+pub type SharedProps = Rc<RawProps>;
 
 /// Id 20 holds flags. Its high bit switches the character attributes on:
 /// without it Ichitaro draws the text plain whatever ids 2-19 say (size,
@@ -74,11 +87,17 @@ pub struct CharStyle {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline: Option<i16>,
     /// Every property as stored, including the ones not yet understood.
-    pub raw: RawProps,
+    /// Shared, not copied, between the runs and glyphs that use it.
+    pub raw: SharedProps,
 }
 
 impl CharStyle {
     pub fn from_raw(raw: &RawProps) -> Self {
+        Self::from_shared(&Rc::new(raw.clone()))
+    }
+
+    /// [`Self::from_raw`] keeping a reference to `raw` instead of a copy.
+    pub fn from_shared(raw: &SharedProps) -> Self {
         let flags = raw.get(&20).copied().unwrap_or(0);
         let on = flags & ATTR_ON != 0;
         // attributes count only while id 20 switches them on (see ATTR_ON)
@@ -108,7 +127,7 @@ impl CharStyle {
                 .map(|v| v as u16 as i16)
                 .filter(|&v| v != 0),
             italic: flag_on(flags, ITALIC_SHIFT).then_some(true),
-            raw: raw.clone(),
+            raw: Rc::clone(raw),
         }
     }
 
@@ -191,51 +210,83 @@ pub fn parse_events(b: &[u8]) -> (Vec<StyleEvent>, usize) {
 pub struct StyleSpan {
     pub start: usize,
     pub len: usize,
-    pub raw: RawProps,
+    pub raw: SharedProps,
 }
 
+/// The property entries one call may copy by default (see
+/// [`crate::limits::Limits::max_style_entries`]).
+pub const DEFAULT_STYLE_ENTRIES: usize = crate::limits::DEFAULT_MAX_STYLE_ENTRIES;
+
 /// Expand events into spans covering `unit_count` units.
+///
+/// Spans stop at the end of the text: events after it change nothing that is
+/// shown or saved. Uses the default budget of property entries.
 pub fn spans(b: &[u8], unit_count: usize) -> Vec<StyleSpan> {
+    let mut budget = DEFAULT_STYLE_ENTRIES;
+    spans_with(b, unit_count, &mut budget).unwrap_or_default()
+}
+
+/// [`spans`] that copies at most `budget` property entries in all (every new
+/// style state costs the number of properties it holds) and fails with
+/// [`Error::TooLarge`] beyond it. `budget` is decreased by what was used.
+pub fn spans_with(b: &[u8], unit_count: usize, budget: &mut usize) -> Result<Vec<StyleSpan>> {
     let (ev, _) = parse_events(b);
     let mut out: Vec<StyleSpan> = Vec::new();
-    let mut state = RawProps::new();
+    // the state is copied (make_mut) only when an event changes it while a span holds it
+    let mut state: SharedProps = Rc::new(RawProps::new());
     let mut pos = 0usize;
-    let mut push = |pos: &mut usize, n: usize, st: &RawProps| {
+    let mut push = |pos: &mut usize, n: usize, st: &SharedProps, budget: &mut usize| -> Result<()> {
+        let n = n.min(unit_count.saturating_sub(*pos));
         if n == 0 {
-            return;
+            return Ok(());
         }
         if let Some(last) = out.last_mut() {
-            if last.raw == *st && last.start + last.len == *pos {
+            if (Rc::ptr_eq(&last.raw, st) || last.raw == *st) && last.start + last.len == *pos {
                 last.len += n;
                 *pos += n;
-                return;
+                return Ok(());
             }
+        }
+        if !out.last().is_some_and(|l| Rc::ptr_eq(&l.raw, st)) {
+            let cost = st.len().max(1);
+            if cost > *budget {
+                return Err(Error::TooLarge(format!(
+                    "the text changes style too often (more than {} property entries)",
+                    DEFAULT_STYLE_ENTRIES.max(*budget)
+                )));
+            }
+            *budget -= cost;
         }
         out.push(StyleSpan {
             start: *pos,
             len: n,
-            raw: st.clone(),
+            raw: Rc::clone(st),
         });
         *pos += n;
+        Ok(())
     };
     for e in ev {
+        if pos >= unit_count {
+            break;
+        }
         match e {
-            StyleEvent::Run(n) => push(&mut pos, n as usize, &state),
+            StyleEvent::Run(n) => push(&mut pos, n as usize, &state, budget)?,
             StyleEvent::Set(props) => {
+                let next = Rc::make_mut(&mut state);
                 for (id, v) in props {
                     let val = v.iter().fold(0u32, |a, &x| (a << 8) | x as u32);
-                    state.insert(id, val);
+                    next.insert(id, val);
                 }
-                push(&mut pos, 1, &state);
+                push(&mut pos, 1, &state, budget)?
             }
             StyleEvent::End => break,
         }
     }
     if pos < unit_count {
         let rest = unit_count - pos;
-        push(&mut pos, rest, &state);
+        push(&mut pos, rest, &state, budget)?;
     }
-    out
+    Ok(out)
 }
 
 /// Per-unit lookup helper.
@@ -255,6 +306,11 @@ impl StyleMap {
         self.spans
             .get(i)
             .filter(|s| s.start <= unit)
-            .map(|s| &s.raw)
+            .map(|s| &*s.raw)
+    }
+    /// [`Self::at`] as the shared map, to build styles without copying it.
+    pub fn at_shared(&self, unit: usize) -> Option<&SharedProps> {
+        let i = self.spans.partition_point(|s| s.start + s.len <= unit);
+        self.spans.get(i).filter(|s| s.start <= unit).map(|s| &s.raw)
     }
 }

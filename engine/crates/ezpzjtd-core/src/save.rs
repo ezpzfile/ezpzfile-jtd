@@ -34,7 +34,7 @@ use crate::edit::normalize_blocks;
 use crate::error::{Error, Result};
 use crate::jtdw::ssmg_pack;
 use crate::ssmg;
-use crate::style::{self, CharStyle, RawProps, StyleEvent, StyleMap};
+use crate::style::{self, CharStyle, RawProps, SharedProps, StyleEvent, StyleMap};
 use crate::text;
 
 /// What a save produced.
@@ -685,12 +685,12 @@ fn default_len(id: u8) -> u8 {
 
 /// Table of distinct style states; units refer to them by index.
 struct Raws {
-    list: Vec<RawProps>,
+    list: Vec<SharedProps>,
 }
 
 impl Raws {
-    fn add(&mut self, r: RawProps) -> u32 {
-        self.list.push(r);
+    fn add(&mut self, r: impl Into<SharedProps>) -> u32 {
+        self.list.push(r.into());
         (self.list.len() - 1) as u32
     }
 }
@@ -1040,6 +1040,7 @@ fn read_text(raw: &[u8]) -> Result<Text0> {
     let mut units = Vec::new();
     let mut ru = Vec::new();
     let mut raws = Raws { list: Vec::new() };
+    let mut style_budget = style::DEFAULT_STYLE_ENTRIES;
     for p in &pieces {
         let (ev, used) = style::parse_events(&p.style);
         for e in &ev {
@@ -1054,8 +1055,8 @@ fn read_text(raw: &[u8]) -> Result<Text0> {
             had_end = ev.iter().any(|e| matches!(e, StyleEvent::End));
         }
         let mut covered = 0usize;
-        let mut last = RawProps::new();
-        for s in style::spans(&p.style, p.units.len()) {
+        let mut last = SharedProps::default();
+        for s in style::spans_with(&p.style, p.units.len(), &mut style_budget)? {
             let idx = raws.add(s.raw.clone());
             for _ in 0..s.len {
                 ru.push(idx);
@@ -2053,8 +2054,8 @@ fn verify(packed: &[u8], blocks1: &[Block]) -> Result<()> {
         for (i, s2) in char_looks(y).into_iter().enumerate() {
             let s1 = match units_of.get(i) {
                 Some(&u) => map
-                    .at(u as usize)
-                    .map(CharStyle::from_raw)
+                    .at_shared(u as usize)
+                    .map(CharStyle::from_shared)
                     .unwrap_or_default(),
                 None => char_looks(x)[i].clone(),
             };

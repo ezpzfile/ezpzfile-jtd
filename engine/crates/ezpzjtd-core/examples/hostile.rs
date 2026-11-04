@@ -71,6 +71,57 @@ fn huge_count() -> Vec<u8> {
     b
 }
 
+/// DocumentText holding one text sub-stream: `units` then the raw style bytes.
+fn text_stream(units: &[u16], style: &[u8]) -> Vec<u8> {
+    let mut payload = b"TextV.01".to_vec();
+    payload.extend(be(units.len() as u32));
+    for u in units {
+        payload.extend(u.to_be_bytes());
+    }
+    payload.extend(style);
+    let len = payload.len();
+    let nb = len.div_ceil(256);
+    payload.resize(nb * 256, 0);
+    let mut b = b"SsmgV.01".to_vec();
+    b.extend(be(1));
+    b.extend(be(256));
+    b.extend(be(nb as u32));
+    b.extend(&payload);
+    b.extend(be(0));
+    b.extend(be(0));
+    b.extend(be(len as u32));
+    b.extend(be(nb as u32));
+    b.extend(be(nb as u32));
+    for i in 0..nb as u32 {
+        b.extend(be(i));
+    }
+    b.extend(be(0));
+    b
+}
+
+/// A style "set" event giving every property id 0..=255 a 4-byte value.
+fn set_all(v: u32) -> Vec<u8> {
+    let mut e = vec![0xfe];
+    for id in 0..=254u8 {
+        e.extend([id, 4]);
+        e.extend(be(v));
+    }
+    e.extend([0xff, 0x00]);
+    e
+}
+
+/// Text with paragraphs of `per` characters, styled by `style`.
+fn text(chars: usize, per: usize) -> Vec<u16> {
+    let mut u = Vec::with_capacity(chars + chars / per + 1);
+    for i in 0..chars {
+        u.push(0x3042);
+        if (i + 1) % per == 0 {
+            u.push(0x0a);
+        }
+    }
+    u
+}
+
 fn run(name: &str, bytes: Vec<u8>) {
     let len = bytes.len();
     let name = name.to_string();
@@ -110,6 +161,44 @@ fn main() {
     run("reuse-64k-x2k", swap(reuse_blocks(65536, 2000)));
     run("reuse-1m-x200", swap(reuse_blocks(1 << 20, 200)));
     run("huge-count", swap(huge_count()));
+    // 2nd report (2026-11-02): each style event and each glyph copied the whole property map
+    let style_events = {
+        let n = 200_000;
+        let mut st = set_all(0x8000_0000);
+        for i in 0..n as u32 {
+            st.extend([0xfe, 0x00, 0x01, (i & 0xff) as u8 | 1, 0xff, 0x00]);
+        }
+        swap(text_stream(&text(n + 10, 100), &st))
+    };
+    let style_glyphs = {
+        let n = 400_000;
+        let mut st = set_all(0x8000_0000);
+        st.extend([0x00]);
+        st.extend(be(n as u32));
+        swap(text_stream(&text(n, n + 1), &st))
+    };
+    if let Some(dir) = args.get(2).filter(|d| !d.is_empty()) {
+        std::fs::write(format!("{dir}/style-events.jtd"), &style_events).ok();
+        std::fs::write(format!("{dir}/style-glyphs.jtd"), &style_glyphs).ok();
+    }
+    run("style-events", {
+        // every property set once, then 6-byte events that each change one value: each makes a
+        // new style state over one character
+        let n = 200_000;
+        let mut st = set_all(0x8000_0000);
+        for i in 0..n as u32 {
+            st.extend([0xfe, 0x00, 0x01, (i & 0xff) as u8 | 1, 0xff, 0x00]);
+        }
+        swap(text_stream(&text(n + 10, 100), &st))
+    });
+    run("style-glyphs", {
+        // one big style state over many characters (one paragraph)
+        let n = 400_000;
+        let mut st = set_all(0x8000_0000);
+        st.extend([0x00]);
+        st.extend(be(n as u32));
+        swap(text_stream(&text(n, n + 1), &st))
+    });
     // a document made in the editor, then saved as .jtd
     let made = |f: &dyn Fn(&mut ezpzjtd_core::edit::Editor)| {
         let mut ed = ezpzjtd_core::edit::Editor::new(ezpzjtd_core::blank::new_document());
@@ -174,7 +263,7 @@ fn main() {
         }
         f
     });
-    if let Some(dir) = args.get(2) {
+    if let Some(dir) = args.get(2).filter(|d| !d.is_empty()) {
         std::fs::write(format!("{dir}/reuse.jtd"), swap(reuse_blocks(65536, 2000))).ok();
         std::fs::write(format!("{dir}/count.jtd"), swap(huge_count())).ok();
         std::fs::write(

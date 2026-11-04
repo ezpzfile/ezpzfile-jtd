@@ -10,6 +10,7 @@
 use crate::doc::{Align, Block, LineFeed, Paragraph, Table};
 use crate::style::CharStyle;
 use serde::Serialize;
+use std::rc::Rc;
 
 /// Page geometry. Documents bring their own (文書スタイル, see `page.rs`);
 /// new documents use the latest Ichitaro's default: A4 portrait, margins 30 mm,
@@ -251,7 +252,9 @@ const NO_END: &str = "(（[［｛「『【〔〈《〘〖‘“";
 struct G {
     ch: char,
     w: f32,
-    style: CharStyle,
+    /// Shared by every glyph of a run: before 0.3.3 each glyph held its own
+    /// copy of the run's style and property map (see `style::SharedProps`).
+    style: Rc<CharStyle>,
     /// Model offset of this character (None for preedit characters).
     off: Option<usize>,
     run: usize,
@@ -295,12 +298,13 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
     let push_pre = |out: &mut Vec<G>, style: &CharStyle, txt: &str| {
         let mut st = style.clone();
         st.underline = Some(1);
+        let st = Rc::new(st);
         for ch in txt.chars() {
             let size = st.size_pt.unwrap_or(base) * spread;
             out.push(G {
                 ch,
                 w: if is_half(ch) { size / 2.0 } else { size },
-                style: st.clone(),
+                style: Rc::clone(&st),
                 off: None,
                 run: usize::MAX,
                 pre: true,
@@ -308,6 +312,7 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
         }
     };
     for (ri, r) in p.runs.iter().enumerate() {
+        let shared = Rc::new(r.style.clone());
         for ch in r.text.chars() {
             if let Some((po, txt)) = pre {
                 if po == off {
@@ -325,7 +330,7 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
             out.push(G {
                 ch,
                 w,
-                style: r.style.clone(),
+                style: Rc::clone(&shared),
                 off: Some(off),
                 run: ri,
                 pre: false,

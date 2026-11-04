@@ -28,7 +28,15 @@ pub struct Limits {
     pub max_pages: usize,
     /// Decoded text streams may be at most this many times the input size.
     pub max_expand: usize,
+    /// Most style property entries kept for all sheets together. Each change
+    /// of character style keeps one copy of the style's property map (up to
+    /// 255 entries); text that changes style on nearly every character with
+    /// large maps fails with "too large or damaged" past this (0.3.3).
+    pub max_style_entries: usize,
 }
+
+/// Default of [`Limits::max_style_entries`].
+pub const DEFAULT_MAX_STYLE_ENTRIES: usize = 2_000_000;
 
 impl Default for Limits {
     fn default() -> Self {
@@ -38,6 +46,7 @@ impl Default for Limits {
             max_sheets: 64,
             max_pages: 2_000,
             max_expand: 4,
+            max_style_entries: DEFAULT_MAX_STYLE_ENTRIES,
         }
     }
 }
@@ -63,6 +72,9 @@ impl Limits {
         if l.max_expand == 0 {
             l.max_expand = d.max_expand;
         }
+        if l.max_style_entries == 0 {
+            l.max_style_entries = d.max_style_entries;
+        }
         l
     }
 }
@@ -86,6 +98,7 @@ fn serde_json_lite(s: &str) -> Option<Limits> {
             "maxSheets" => l.max_sheets = v,
             "maxPages" => l.max_pages = v,
             "maxExpand" => l.max_expand = v,
+            "maxStyleEntries" => l.max_style_entries = v,
             _ => {}
         }
     }
