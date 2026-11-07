@@ -19,6 +19,22 @@ HWP における [rhwp](https://github.com/edwardkim/rhwp) と同じ考え方で
 
 <sub>一太郎 最新版で作った案内文を、ブラウザのエディタで開いたところ。</sub>
 
+## ブラウザでそのまま使う（インストール不要）
+
+このエンジンをそのまま組み込んだ無料ツールを公開しています。ファイルは端末の外に送信されません。
+
+- [JTD エディタ](https://ezpzfile.com/ja/jtd-editor)：.jtd を開いて直し、一太郎形式のまま保存。Word・PDF にも変換
+- [jtd ファイルの開き方（一太郎なし）](https://ezpzfile.com/ja/column/open-jtd-file)
+- [一太郎を PDF に変換する](https://ezpzfile.com/ja/column/ichitaro-to-pdf)
+- [一太郎ビューアが使えないときの代わり](https://ezpzfile.com/ja/column/ichitaro-viewer-alternative)
+
+### このエンジンを使っているサイト
+
+- [KUKAN](https://github.com/kukan-project/kukan)：官公庁のオープンデータカタログ。一太郎文書のプレビューに利用
+- [openedfile.com](https://openedfile.com/ja/tools/jtd)：jtd をブラウザで開く・変換するツール
+
+採用例があればお知らせください。ここに追記します。
+
 ## できること
 
 官公庁などがインターネットで公開している一太郎ファイル 95 件（一太郎 8 から 2018 まで）で確認しています。

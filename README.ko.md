@@ -18,6 +18,20 @@ HWP의 [rhwp](https://github.com/edwardkim/rhwp)와 같은 생각으로 만들�
 
 <sub>一太郎 최신판으로 만든 안내문을 브라우저 편집기로 연 모습.</sub>
 
+## 브라우저에서 바로 쓰기 (설치 없음)
+
+이 엔진을 그대로 넣은 무료 도구를 운영합니다. 파일은 기기 밖으로 나가지 않습니다. 화면은 일본어와 영어만 있습니다.
+
+- [JTD 편집기](https://ezpzfile.com/jtd-editor): .jtd 를 열어 고치고 一太郎 형식 그대로 저장. Word·PDF 로도 변환
+- [一太郎 없이 jtd 파일 여는 법 (영어)](https://ezpzfile.com/column/open-jtd-file)
+
+### 이 엔진을 쓰는 곳
+
+- [KUKAN](https://github.com/kukan-project/kukan): 일본 관공서 오픈 데이터 카탈로그. 一太郎 문서 미리 보기에 사용
+- [openedfile.com](https://openedfile.com/ja/tools/jtd): jtd 를 브라우저에서 열고 변환하는 도구
+
+쓰고 계신 곳이 있으면 알려 주세요. 여기에 더하겠습니다.
+
 ## 되는 것
 
 일본 관공서 등이 인터넷에 공개한 一太郎 파일 95개(一太郎 8부터 2018까지)로 확인했습니다.

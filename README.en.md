@@ -18,6 +18,20 @@ Status: **v0.3, reader + editor that saves back to `.jtd` (developer preview).**
 
 <sub>A notice made in the latest Ichitaro, open in the browser editor.</sub>
 
+## Use it in your browser (no install)
+
+We run free tools built directly on this engine. Your files never leave your device.
+
+- [JTD editor](https://ezpzfile.com/jtd-editor): open a .jtd, edit it, and save it back in Ichitaro format. Converts to Word and PDF too
+- [How to open a .jtd file without Ichitaro](https://ezpzfile.com/column/open-jtd-file)
+
+### Sites using this engine
+
+- [KUKAN](https://github.com/kukan-project/kukan): an open data catalog for government agencies. Uses it to preview Ichitaro documents
+- [openedfile.com](https://openedfile.com/ja/tools/jtd): a tool to open and convert .jtd files in the browser
+
+Using it somewhere? Let us know and we will add you here.
+
 ## What works
 
 Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese ministries:
