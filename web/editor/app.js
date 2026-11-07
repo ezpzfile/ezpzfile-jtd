@@ -1097,7 +1097,11 @@ async function openFile(file) {
     const s = JSON.parse(ed.summaryJson());
     if (s.template && /[\\:]/.test(s.template)) toast(tr("この文書には元の保存場所が残っています（文書情報）"));
   } catch (err) {
-    HOST.event("open_fail", { error_code: HOST.errorKind(err), stage: "read" });
+    // which old or unknown formats fail: the first 16 bytes (hex) and a size range, never the content
+    const head16 = await file.slice(0, 16).arrayBuffer().then((b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("")).catch(() => "");
+    const mb = file.size / 1048576;
+    const size_bucket = mb < 1 ? "<1MB" : mb < 5 ? "1-5MB" : mb < 20 ? "5-20MB" : mb < 50 ? "20-50MB" : mb < 100 ? "50-100MB" : ">100MB";
+    HOST.event("open_fail", { error_code: HOST.errorKind(err), stage: "read", head16, size_bucket });
     const why = String(err.message || err);
     showInfo(tr("開けませんでした"), [[tr("ファイル"), file.name], [tr("理由"), /too large or damaged/.test(why) ? tr("ファイルが大きすぎるか、壊れています") : why]]);
   }
