@@ -553,7 +553,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.1")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -1130,6 +1130,7 @@ async function openFile(file) {
     const why = String((err && err.message) || err);
     HOST.event("open_fail", { error_code: failCode(kind, ext, why, err), kind, ext, stage: "read", head16, size_bucket });
     showInfo(tr("開けませんでした"), [[tr("ファイル"), file.name], [tr("種類"), kindName(kind, ext)], [tr("理由"), failReason(kind, ext, why)], [tr("次にできること"), failNext(kind, ext)]]);
+    if (!["jtd", "jttc", "unknown", "empty", "cfb_damaged", "unread"].includes(kind)) HOST.notOurs(file, kind);
   }
 }
 

@@ -77,6 +77,8 @@ const HOST = (() => {
       post("state", s);
     },
     event(name, params = {}) { post("event", { name, params }); },
+    /** A file that did not open and is not an Ichitaro document: the framing site may offer the tool that opens it. */
+    notOurs(file, kind) { try { post("not-ours", { file, kind }); } catch {} },
     /** Once per document and feature: bold a hundred times counts once. */
     once(name, params = {}) {
       const key = name + ":" + Object.values(params).join(",");

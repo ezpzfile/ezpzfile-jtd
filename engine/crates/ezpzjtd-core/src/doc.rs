@@ -924,7 +924,22 @@ impl<'a> Builder<'a> {
             }
         }
         if let Some(t) = self.table.take() {
+            let single = t.rows.iter().all(|r| r.cells.len() <= 1);
+            let at = self.blocks.len();
             push_table(&mut self.blocks, t);
+            // A page break just before a ruled box (its lines are unwrapped
+            // into paragraphs) belongs to the box's first line, not to the
+            // paragraph after the box.
+            if single && self.page_break {
+                if let Some(Block::Paragraph(p)) = self.blocks.get_mut(at) {
+                    p.page_break_before = true;
+                    self.page_break = false;
+                    let pb = self.t.page_break.take();
+                    if let Some(s) = p.src.0.as_mut() {
+                        s.page_break = pb;
+                    }
+                }
+            }
         }
     }
 }
@@ -1121,7 +1136,19 @@ fn build_blocks(
                 b.flush_para(false);
                 let left = payload.get(1).copied().unwrap_or(0);
                 let right = payload.get(2).copied().unwrap_or(0);
-                b.row.get_or_insert_with(Row::default).cells.push(Cell {
+                // a cell record with no ruled-line header before it: the row
+                // starts at this record (a zero-length header, for saving)
+                b.row
+                    .get_or_insert_with(|| Row {
+                        src: if track {
+                            Src(Some(Box::new(RowSrc { header: (start, 0), end: None })))
+                        } else {
+                            Src::default()
+                        },
+                        ..Row::default()
+                    })
+                    .cells
+                    .push(Cell {
                     left,
                     right,
                     paragraphs: Vec::new(),
