@@ -441,6 +441,7 @@ function updateStyleUi() {
   const size = String(s.size);
   for (const sel of $$(".size-select")) { if (!Array.from(sel.options).some((o) => o.value === size)) sel.append(el("option", { value: size, text: size })); sel.value = size; }
   $$(".swatchline").forEach((i) => (i.style.background = s.color || "#0b1020"));
+  $$(".font-select").forEach((f) => (f.value = s.gothic ? "gothic" : "mincho"));
   const sel = S.ed.selectedText();
   $("#cnt-sel").textContent = sel ? Array.from(sel.replace(/\s/g, "")).length.toLocaleString() : "0";
   $("#cnt-all").textContent = S.status.chars.toLocaleString();
@@ -553,7 +554,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.1")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.2")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -810,7 +811,9 @@ function buildToolbar() {
     ibtn("find", tr("検索"), "search"), ibtn("marks", tr("編集記号"), "pilcrow"), vsep(),
     ibtn("jumpPalette", tr("ジャンプパレット"), "panel-left"), ibtn("toolPalette", tr("ツールパレット"), "panel-right"));
 
-  const font = el("span", { class: "fill", title: tr("フォント（いまは明朝のみ）") }, el("select", { disabled: true, "aria-label": tr("フォント") }, el("option", { text: tr("明朝") })));
+  const fontSel = el("select", { class: "font-select", "aria-label": tr("フォント") }, el("option", { value: "mincho", text: tr("明朝") }), el("option", { value: "gothic", text: tr("ゴシック") }));
+  fontSel.addEventListener("change", () => { if (!S.hasDoc) return; S.ed.setGothic(fontSel.value === "gothic"); HOST.once("format", { op: "font" }); refresh(); focusInput(); });
+  const font = el("span", { class: "fill", title: tr("フォント") }, fontSel);
   $("#formatbar").replaceChildren(
     font, sizeControl(), vsep(),
     ibtn("bold", tr("太字 (Ctrl+B)"), "bold"), ibtn("italic", tr("斜体 (Ctrl+I)"), "italic"), ibtn("underline", tr("下線 (Ctrl+U)"), "underline"), colorButton(), vsep(),

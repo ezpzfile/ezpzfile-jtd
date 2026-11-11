@@ -84,6 +84,13 @@ pub fn save(original: &[u8], doc: &Document) -> Result<Saved> {
             }
         }
     }
+    // faces the editor added (ＭＳ ゴシック): append them to /Font
+    if let Some(raw) = cfb.read("/Font") {
+        if let Some(fonts) = font_table_with(&raw, &doc.fonts) {
+            tree.set_stream("/Font", fonts);
+            changed += 1;
+        }
+    }
     let bytes = if changed == 0 {
         original.to_vec()
     } else {
@@ -709,6 +716,7 @@ fn same_storable(a: &CharStyle, b: &CharStyle) -> bool {
         && a.size_pt == b.size_pt
         && a.underline == b.underline
         && a.color == b.color
+        && a.font == b.font
 }
 
 /// `raw` with the formatting of `want` applied (only what differs).
@@ -760,6 +768,9 @@ fn apply_look(raw: &RawProps, want: &CharStyle) -> RawProps {
         } else {
             flags &= !style::ATTR_UNDERLINE;
         }
+    }
+    if have.font != want.font {
+        r.insert(3, want.font.map(|f| f as u32).unwrap_or(0xffff));
     }
     if have.color != want.color {
         r.insert(
@@ -1760,6 +1771,12 @@ fn fix_headers(
     let po = flat_paras(&bo);
     let p1 = flat_paras(blocks1);
     if po.len() != p1.len() {
+        if std::env::var("EZPZJTD_SAVE_DEBUG").is_ok() {
+            let k = po.iter().zip(p1.iter()).position(|(a, b)| a.plain_text() != b.plain_text()).unwrap_or(po.len().min(p1.len()));
+            for j in k.saturating_sub(2)..k + 3 {
+                eprintln!("PARA {j}: got {:?} | want {:?}", po.get(j).map(|p| p.plain_text()), p1.get(j).map(|p| p.plain_text()));
+            }
+        }
         return Err(Error::Unsupported(format!(
             "この編集は、まだ一太郎形式に保存できません（段落の構成 {} / {}）",
             po.len(),
@@ -2154,4 +2171,77 @@ mod tests {
             vec![0, 0x24, 1, 2, 0xffff, 0]
         );
     }
+}
+
+/// Where each record of a `/Font` table starts and ends.
+fn font_records(b: &[u8]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    if b.len() < 10 || &b[..8] != b"FontV.01" {
+        return out;
+    }
+    let count = u16::from_be_bytes([b[8], b[9]]) as usize;
+    let mut o = 10usize;
+    let skip_z = |o: &mut usize| {
+        while *o + 1 < b.len() {
+            let w = u16::from_be_bytes([b[*o], b[*o + 1]]);
+            *o += 2;
+            if w == 0 {
+                break;
+            }
+        }
+    };
+    for _ in 0..count.min(256) {
+        let start = o;
+        if o + 30 > b.len() {
+            break;
+        }
+        o += 30;
+        skip_z(&mut o);
+        o += 12;
+        skip_z(&mut o);
+        if o > b.len() {
+            break;
+        }
+        out.push((start, o));
+    }
+    out
+}
+
+/// `/Font` with the faces of `fonts` beyond the stored ones appended, or
+/// `None` when nothing was added. A new record copies the first record
+/// (weight, style name 標準) with the new index, name and a modern (Gothic)
+/// pitch-and-family byte.
+fn font_table_with(raw: &[u8], fonts: &[crate::doc::FontInfo]) -> Option<Vec<u8>> {
+    let recs = font_records(raw);
+    if fonts.len() <= recs.len() || recs.is_empty() {
+        return None;
+    }
+    let (s0, e0) = recs[0];
+    let tmpl = &raw[s0..e0];
+    let name_end = {
+        let mut o = 30;
+        while o + 1 < tmpl.len() && !(tmpl[o] == 0 && tmpl[o + 1] == 0) {
+            o += 2;
+        }
+        o + 2
+    };
+    let (_, last_end) = *recs.last().unwrap();
+    let mut out = raw[..last_end].to_vec();
+    for (i, f) in fonts.iter().enumerate().skip(recs.len()) {
+        let mut r = tmpl[..30].to_vec();
+        r[0..2].copy_from_slice(&(i as u16).to_be_bytes());
+        r[25] = f.charset;
+        if crate::layout::is_gothic(&f.name) {
+            r[29] = (r[29] & 0x0f) | 0x30;
+        }
+        for u in f.name.encode_utf16() {
+            r.extend_from_slice(&u.to_be_bytes());
+        }
+        r.extend_from_slice(&[0, 0]);
+        r.extend_from_slice(&tmpl[name_end..]);
+        out.extend_from_slice(&r);
+    }
+    out.extend_from_slice(&raw[last_end..]);
+    out[8..10].copy_from_slice(&(fonts.len() as u16).to_be_bytes());
+    Some(out)
 }

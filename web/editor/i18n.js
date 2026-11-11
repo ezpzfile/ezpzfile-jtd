@@ -134,6 +134,7 @@ const EN = {
   "改ページ (Ctrl+Y)": "Page break (Ctrl+Y)",
   "検索": "Find",
   "フォント（いまは明朝のみ）": "Font (Mincho only for now)",
+  "ゴシック": "Gothic",
   "フォント": "Font",
   "明朝": "Mincho",
   "文字サイズ": "Text size",

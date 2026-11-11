@@ -315,6 +315,8 @@ pub struct CaretStyle {
     pub size: f32,
     pub color: Option<String>,
     pub align: Align,
+    /// The text is set in a Gothic face.
+    pub gothic: bool,
 }
 
 pub const SIZES: [f32; 22] = [
@@ -815,6 +817,7 @@ impl Editor {
             size: s.size_pt.unwrap_or(self.setup.font_pt),
             color: s.color.clone(),
             align: self.para(self.caret.p).align,
+            gothic: s.font.is_some_and(|f| self.setup.gothic.contains(&f)),
         }
     }
 
@@ -879,6 +882,25 @@ impl Editor {
         };
         self.set_size(next);
     }
+    /// Mincho (the document's standard face) or Gothic. Gothic uses a Gothic
+    /// face already in the font table, or adds ＭＳ ゴシック to it.
+    pub fn set_gothic(&mut self, on: bool) {
+        let font = if on {
+            let i = match self.doc.fonts.iter().position(|f| crate::layout::is_gothic(&f.name)) {
+                Some(i) => i,
+                None => {
+                    self.doc.fonts.push(crate::doc::FontInfo { name: "ＭＳ ゴシック".into(), charset: 0x80 });
+                    self.setup.gothic = gothic_fonts(&self.doc);
+                    self.doc.fonts.len() - 1
+                }
+            };
+            Some(i as u16)
+        } else {
+            None
+        };
+        self.format(move |s| s.font = font);
+    }
+
     pub fn set_color(&mut self, color: Option<String>) {
         self.format(move |s| s.color = color.clone());
     }

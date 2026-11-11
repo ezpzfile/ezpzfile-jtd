@@ -257,6 +257,11 @@ impl JtdEditor {
         self.ed.size_step(up)
     }
     /// `"#rrggbb"`, or empty for automatic colour.
+    /// Mincho (false) or Gothic (true) for the selection or what is typed next.
+    #[wasm_bindgen(js_name = setGothic)]
+    pub fn set_gothic(&mut self, on: bool) {
+        self.ed.set_gothic(on)
+    }
     #[wasm_bindgen(js_name = setColor)]
     pub fn set_color(&mut self, c: &str) {
         self.ed.set_color(if c.is_empty() {
