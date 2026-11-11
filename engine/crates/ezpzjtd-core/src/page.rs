@@ -197,6 +197,7 @@ impl PageStyle {
             } else {
                 10.5
             },
+            gothic: Vec::new(),
         }
     }
 }

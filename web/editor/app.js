@@ -9,6 +9,8 @@
 
 const PT = 96 / 72; // CSS px per point at 100 %
 const FONT_STACK = '"Hiragino Mincho ProN","Hiragino Mincho Pro","Yu Mincho","YuMincho","MS Mincho","Noto Serif CJK JP","Noto Serif JP",serif';
+// text the document sets in a Gothic face (ＭＳ ゴシック, ゴシック体, …)
+const GOTHIC_STACK = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","YuGothic","MS Gothic","Noto Sans CJK JP","Noto Sans JP",sans-serif';
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -266,7 +268,7 @@ function paintItems(g, data, marks) {
   g.textBaseline = "alphabetic";
   for (const it of data.items) {
     if (it.t === "Text") {
-      g.font = `${it.i ? "italic " : ""}${it.b ? "bold " : ""}${it.size}px ${FONT_STACK}`;
+      g.font = `${it.i ? "italic " : ""}${it.b ? "bold " : ""}${it.size}px ${it.g ? GOTHIC_STACK : FONT_STACK}`;
       g.fillStyle = it.color || "#111";
       const chars = Array.from(it.s);
       for (let k = 0; k < chars.length; k++) {
@@ -551,7 +553,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.3")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -610,7 +612,7 @@ function menuDefs() {
     [tr("編集"), "E", [["undo", tr("元に戻す"), "Ctrl+Z"], ["redo", tr("やり直し"), "Ctrl+Shift+Z"], ["repeat", tr("繰り返し"), "Ctrl+R"], "-", ["cut", tr("切り取り"), "Ctrl+X"], ["copy", tr("コピー"), "Ctrl+C"], ["paste", tr("貼り付け"), "Ctrl+V"], "-", ["selectAll", tr("すべて選択"), "Ctrl+A"], "-", ["find", tr("検索..."), find], ["replace", tr("置換..."), repl], ["jump", tr("ジャンプ"), "Ctrl+J"]]],
     [tr("表示"), "V", [["marks", tr("編集記号"), "", "check"], ["ruler", tr("ルーラー"), "", "check"], ["jumpPalette", tr("ジャンプパレット"), "", "check"], ["toolPalette", tr("ツールパレット"), "", "check"], ["statusBar", tr("ステータスバー"), "", "check"], "-", ["zoomIn", tr("拡大")], ["zoomOut", tr("縮小")], ["zoom100", "100%"], ["zoomFit", tr("幅に合わせる")]]],
     [tr("挿入"), "I", [["pageBreak", tr("改ページ"), "Ctrl+Y"], ["table", tr("表..."), "Ctrl+¥"], ["date", tr("日付（和暦）")]]],
-    [tr("書式"), "O", [["bold", tr("太字"), "Ctrl+B"], ["italic", tr("斜体"), "Ctrl+I"], ["underline", tr("下線"), "Ctrl+U"], "-", ["sizeUp", tr("文字を大きく"), "Ctrl+↑"], ["sizeDown", tr("文字を小さく"), "Ctrl+↓"], ["fontPalette", tr("フォント・飾り..."), "F7"], "-", ["alignLeft", tr("左寄せ"), "Ctrl+4"], ["alignCenter", tr("センタリング"), "Ctrl+5"], ["alignRight", tr("右寄せ"), "Ctrl+6"]]],
+    [tr("書式"), "O", [["bold", tr("太字"), "Ctrl+B"], ["italic", tr("斜体"), "Ctrl+I"], ["underline", tr("下線"), "Ctrl+U"], "-", ["sizeUp", tr("文字を大きく"), "Ctrl+↑"], ["sizeDown", tr("文字を小さく"), "Ctrl+↓"], ["fontPalette", tr("フォント・飾り"), "F7"], "-", ["alignLeft", tr("左寄せ"), "Ctrl+4"], ["alignCenter", tr("センタリング"), "Ctrl+5"], ["alignRight", tr("右寄せ"), "Ctrl+6"]]],
     [tr("罫線"), "K", [["table", tr("表作成..."), "Ctrl+¥"], "-", ["rowAbove", tr("行を上に挿入")], ["rowBelow", tr("行を下に挿入")], ["rowDelete", tr("行を削除")], "-", ["drawRules", tr("罫線モード（準備中）"), "", "disabled"]]],
     [tr("ツール"), "T", [["keymapWindows", tr("キー割付: Windows 標準"), "", "radio"], ["keymapIchitaro", tr("キー割付: 一太郎標準"), "", "radio"], "-", ["count", tr("文字数...")]]],
     [tr("ヘルプ"), "H", [["shortcuts", tr("ショートカットキー一覧")], ["about", tr("JTD エディタについて")]]],
@@ -850,8 +852,8 @@ function buildPalette() {
     }));
   const findIn = el("input", { class: "field", id: "find-q", placeholder: tr("検索する文字") });
   const replIn = el("input", { class: "field", id: "find-r", placeholder: tr("置換後の文字") });
-  findIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doFind(e.shiftKey); } if (e.key === "Escape") focusInput(); });
-  replIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doReplace(); } if (e.key === "Escape") focusInput(); });
+  findIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doFind(e.shiftKey); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); focusInput(); } });
+  replIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doReplace(); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); focusInput(); } });
   const rows = el("input", { class: "num", type: "number", min: 1, max: 100, value: 3, id: "pal-rows", "aria-label": tr("行数") });
   const cols = el("input", { class: "num", type: "number", min: 1, max: 20, value: 3, id: "pal-cols", "aria-label": tr("列数") });
   const hide = el("button", { class: "ib", title: tr("ツールパレットを隠す"), "aria-label": tr("ツールパレットを隠す") });
@@ -1061,13 +1063,31 @@ function bindInput() {
     refresh({ scroll: false });
     focusInput();
   });
+  // dragging past the top or bottom edge scrolls and keeps extending the selection
+  let dragPt = null, dragTimer = 0;
+  const dragScroll = () => {
+    dragTimer = 0;
+    if (!dragging || !dragPt) return;
+    const r = sc.getBoundingClientRect(), edge = 32;
+    const dy = dragPt.y < r.top + edge ? -Math.min(48, r.top + edge - dragPt.y) : dragPt.y > r.bottom - edge ? Math.min(48, dragPt.y - (r.bottom - edge)) : 0;
+    if (!dy) return;
+    const before = sc.scrollTop;
+    sc.scrollTop += dy;
+    if (sc.scrollTop === before) return;
+    const y = Math.max(r.top + 2, Math.min(r.bottom - 2, dragPt.y));
+    const h = hit({ clientX: dragPt.x, clientY: y, target: document.elementFromPoint(dragPt.x, y) });
+    if (h) { S.ed.click(h.page, h.x, h.y, true); refresh({ scroll: false }); }
+    dragTimer = requestAnimationFrame(dragScroll);
+  };
   window.addEventListener("mousemove", (e) => {
     if (!dragging || !(e.buttons & 1)) { dragging = false; return; }
+    dragPt = { x: e.clientX, y: e.clientY };
+    if (!dragTimer) dragTimer = requestAnimationFrame(dragScroll);
     const h = hit(e); if (!h) return;
     S.ed.click(h.page, h.x, h.y, true);
     refresh({ scroll: false });
   });
-  window.addEventListener("mouseup", () => { dragging = false; });
+  window.addEventListener("mouseup", () => { dragging = false; dragPt = null; });
   sc.addEventListener("scroll", () => drawRuler());
   sc.addEventListener("wheel", (e) => { if (e.ctrlKey) { e.preventDefault(); rezoom(S.zoom + (e.deltaY < 0 ? 0.1 : -0.1)); } }, { passive: false });
 }
@@ -1077,8 +1097,9 @@ function pageAtY(y) {
 
 // ------------------------------------------------------------------ files
 async function openFile(file) {
+  let bytes = null;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    bytes = new Uint8Array(await file.arrayBuffer());
     const pf = await preflight(bytes);
     if (!pf.ok) {
       // out of memory inside the engine shows up as a trap ("unreachable") or an allocation message
@@ -1089,22 +1110,155 @@ async function openFile(file) {
     setEditor(ed, file.name.replace(/\.[^.]+$/, ""));
     // 上書き保存 writes the same kind of file it came from
     S.saveFmt = ed.canSaveJtd() ? "jtd" : null;
-    S.ext = (/\.([a-z0-9]{1,5})$/i.exec(file.name)?.[1] || "none").toLowerCase();
+    S.ext = extOf(file.name);
     setHasDoc(true);
-    HOST.event("file", { ext: S.ext, pages: ed.pageCount() });
+    HOST.event("file", { ext: S.ext, pages: ed.pageCount(), kind: fileKindOf(bytes) });
     // page limit reached (a huge or damaged file): say so instead of trying to draw them all
     if (JSON.parse(ed.statusJson()).truncated) toast(tr("ページが多すぎるため、最初の {0} ページだけを表示しています", ed.pageCount()));
+    if (fileKindOf(bytes) === "jttc") toast(tr("圧縮された一太郎文書（.jttc）を開きました。上書き保存すると .jtd になります"));
     const s = JSON.parse(ed.summaryJson());
     if (s.template && /[\\:]/.test(s.template)) toast(tr("この文書には元の保存場所が残っています（文書情報）"));
   } catch (err) {
-    // which old or unknown formats fail: the first 16 bytes (hex) and a size range, never the content
-    const head16 = await file.slice(0, 16).arrayBuffer().then((b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("")).catch(() => "");
+    const kind = bytes ? fileKindOf(bytes) : "unread";
+    const ext = extOf(file.name);
+    // text and RTF saved under a .jtd name: open what is readable as a new document
+    if (bytes && (kind === "text" || kind === "rtf") && openAsText(file, bytes, kind)) return;
+    // which old or unknown formats fail: the kind, the first 16 bytes (hex) and a size range, never the content
+    const head16 = bytes ? Array.from(bytes.subarray(0, 16), (x) => x.toString(16).padStart(2, "0")).join("") : "";
     const mb = file.size / 1048576;
     const size_bucket = mb < 1 ? "<1MB" : mb < 5 ? "1-5MB" : mb < 20 ? "5-20MB" : mb < 50 ? "20-50MB" : mb < 100 ? "50-100MB" : ">100MB";
-    HOST.event("open_fail", { error_code: HOST.errorKind(err), stage: "read", head16, size_bucket });
-    const why = String(err.message || err);
-    showInfo(tr("開けませんでした"), [[tr("ファイル"), file.name], [tr("理由"), /too large or damaged/.test(why) ? tr("ファイルが大きすぎるか、壊れています") : why]]);
+    const why = String((err && err.message) || err);
+    HOST.event("open_fail", { error_code: failCode(kind, ext, why, err), kind, ext, stage: "read", head16, size_bucket });
+    showInfo(tr("開けませんでした"), [[tr("ファイル"), file.name], [tr("種類"), kindName(kind, ext)], [tr("理由"), failReason(kind, ext, why)], [tr("次にできること"), failNext(kind, ext)]]);
   }
+}
+
+const OLD_TARO = ["jxw", "jaw", "jbw", "jfw", "jvw", "jsw", "jtw"];
+function extOf(name) {
+  return (/\.([a-z0-9]{1,5})$/i.exec(name)?.[1] || "none").toLowerCase();
+}
+function fileKindOf(bytes) {
+  try { return typeof fileKind === "function" ? fileKind(bytes) : "unknown"; } catch { return "unknown"; }
+}
+/** A short reason code for the report: what the file is, or why a 一太郎 file failed. */
+function failCode(kind, ext, why, err) {
+  if (kind === "unknown" && OLD_TARO.includes(ext)) return "old_format";
+  if (kind === "jtd" || kind === "jttc") {
+    if (/too large or damaged/i.test(why)) return "too_large";
+    if (/corrupt|damaged|bad /i.test(why)) return "damaged";
+    if (/unsupported|not a document we can read|packing/i.test(why)) return kind === "jttc" ? "jttc_inner" : "jtd_layout";
+    return HOST.errorKind(err);
+  }
+  if (kind === "cfb_damaged") return "damaged";
+  return "not_jtd";
+}
+const KIND_NAMES = {
+  doc: "Word 文書（.doc）", zip: "Word・Excel などの文書（ZIP 形式）", pdf: "PDF", rtf: "リッチテキスト（RTF）",
+  xls: "Excel ブック（.xls）", ppt: "PowerPoint（.ppt）", hwp: "ハングル文書（.hwp）", html: "Web ページ（HTML）",
+  image: "画像", lzh: "LZH 圧縮ファイル", text: "テキスト", js_other: "ジャストシステムの別のソフトの文書（花子・三四郎など）",
+  jttc: "圧縮された一太郎文書（.jttc）", jtd: "一太郎文書", cfb_damaged: "壊れた文書ファイル", cfb_other: "Office 系の別の文書",
+  empty: "空のファイル",
+};
+function kindName(kind, ext) {
+  if (kind === "unknown" && OLD_TARO.includes(ext)) return tr("古い一太郎の文書（Ver.7 以前、.{0}）", ext);
+  return KIND_NAMES[kind] ? tr(KIND_NAMES[kind]) : tr("不明な形式");
+}
+function failReason(kind, ext, why) {
+  if (kind === "unknown" && OLD_TARO.includes(ext)) return tr("一太郎 Ver.7 以前の古い形式は、まだ読めません");
+  if (kind === "jtd") {
+    if (/too large or damaged/i.test(why)) return tr("ファイルが大きすぎるか、壊れています");
+    if (/corrupt|damaged|bad /i.test(why)) return tr("ファイルの一部が壊れています");
+    return tr("この一太郎文書の中の書き方は、まだ読めません");
+  }
+  if (kind === "jttc") return tr("圧縮の中身が、まだ読めない書き方です");
+  if (kind === "cfb_damaged") return tr("ファイルの一部が壊れています");
+  if (kind === "empty") return tr("ファイルの中身がありません");
+  if (kind === "unknown") return tr("一太郎文書ではないか、壊れています");
+  return tr("一太郎文書ではありません");
+}
+function failNext(kind, ext) {
+  if ((kind === "unknown" && OLD_TARO.includes(ext)) || kind === "jttc" || kind === "jtd")
+    return tr("一太郎または一太郎ビューア（無料、Windows）で開き、「一太郎文書（.jtd）」で保存し直すと開けます");
+  if (kind === "doc" || kind === "zip" || kind === "rtf") return tr("Word 文書を開ける編集ソフトで開いてください");
+  if (kind === "pdf") return tr("PDF を開けるソフトで開いてください");
+  if (kind === "js_other") return tr("作ったソフト（花子・三四郎など）で開いてください");
+  if (kind === "empty") return tr("元のファイルをもう一度受け取ってください");
+  return tr("送ってくれた人に、一太郎文書（.jtd）か PDF で送り直してもらってください");
+}
+
+/** Text or RTF under a 一太郎 name: open the text as a new document. */
+function openAsText(file, bytes, kind) {
+  try {
+    const text = kind === "rtf" ? rtfText(bytes) : decodePlainText(bytes);
+    if (!text || text.length > 300000) return false;
+    const ed = new JtdEditor();
+    ed.insertText(text);
+    ed.moveCaret("docStart", false);
+    S.setup = null;
+    setEditor(ed, file.name.replace(/\.[^.]+$/, ""));
+    S.saveFmt = null;
+    S.ext = extOf(file.name);
+    setHasDoc(true);
+    HOST.event("file", { ext: S.ext, pages: ed.pageCount(), kind });
+    showInfo(tr("一太郎文書ではありませんでした"), [
+      [tr("ファイル"), file.name],
+      [tr("種類"), kindName(kind, S.ext)],
+      [tr("開き方"), kind === "rtf" ? tr("文字だけを取り出して新規文書として開きました（表や飾りは入りません）") : tr("新規文書として開きました")],
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function decodePlainText(bytes) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch {}
+  for (const enc of ["shift_jis", "euc-jp", "utf-16le"]) {
+    try { return new TextDecoder(enc, { fatal: true }).decode(bytes); } catch {}
+  }
+  return new TextDecoder("shift_jis").decode(bytes);
+}
+/** The text of an RTF file: paragraphs, \'hh bytes (in the document's code page) and \uN characters. */
+function rtfText(bytes) {
+  const src = new TextDecoder("latin1").decode(bytes);
+  const cp = /\\ansicpg(\d+)/.exec(src)?.[1];
+  const dec = new TextDecoder(cp === "932" || !cp ? "shift_jis" : cp === "65001" ? "utf-8" : "windows-" + cp);
+  const SKIP = /^(fonttbl|colortbl|stylesheet|info|pict|object|header|footer|headerl|headerr|footerl|footerr|listtable|listoverridetable|rsidtbl|generator|themedata|colorschememapping|datastore|latentstyles|xmlnstbl|mmathPr|bkmkstart|bkmkend|fldinst)$/;
+  let out = "", raw = [], depth = 0, skipAt = -1, uc = 1, skipN = 0;
+  const flush = () => { if (raw.length) { out += dec.decode(new Uint8Array(raw)); raw = []; } };
+  const stack = [];
+  for (let i = 0; i < src.length; ) {
+    const ch = src[i];
+    if (ch === "{") { stack.push(uc); depth++; i++; continue; }
+    if (ch === "}") { if (skipAt === depth) skipAt = -1; depth--; uc = stack.pop() ?? 1; i++; continue; }
+    if (ch === "\\") {
+      const m = /^\\([a-zA-Z]+)(-?\d+)? ?|^\\'([0-9a-fA-F]{2})|^\\(.)/.exec(src.slice(i, i + 40));
+      if (!m) { i++; continue; }
+      i += m[0].length;
+      if (skipAt >= 0) continue;
+      if (m[3]) { if (skipN > 0) { skipN--; continue; } raw.push(parseInt(m[3], 16)); continue; }
+      if (m[4]) {
+        if (m[4] === "*") { skipAt = depth; continue; }
+        if (m[4] === "~") { flush(); out += " "; }
+        else if (m[4] === "\\" || m[4] === "{" || m[4] === "}") { flush(); out += m[4]; }
+        else if (m[4] === "\n" || m[4] === "\r") { flush(); out += "\n"; }
+        continue;
+      }
+      const w = m[1], n = m[2] !== undefined ? parseInt(m[2], 10) : null;
+      if (SKIP.test(w)) { skipAt = depth; continue; }
+      if (w === "uc") uc = n ?? 1;
+      else if (w === "u") { flush(); out += String.fromCharCode(n < 0 ? n + 65536 : n); skipN = uc; }
+      else if (w === "par" || w === "line" || w === "row") { flush(); out += "\n"; }
+      else if (w === "cell") { flush(); out += "\t"; }
+      else if (w === "tab") { flush(); out += "\t"; }
+      else if (w === "page") { flush(); out += "\n"; }
+      continue;
+    }
+    if (ch === "\r" || ch === "\n") { i++; continue; }
+    if (skipAt < 0) { if (skipN > 0) skipN--; else raw.push(ch.charCodeAt(0) & 0xff); }
+    i++;
+  }
+  flush();
+  return out.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
 }
 
 function download(name, data, type) {

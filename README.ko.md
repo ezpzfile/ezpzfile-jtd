@@ -47,7 +47,11 @@ HWP의 [rhwp](https://github.com/edwardkim/rhwp)와 같은 생각으로 만들�
 - 문서 정보. 一太郎가 파일 안에 남기는 **원래 저장 경로**도 표시
 - 내보내기: 텍스트, Markdown, HTML, JSON
 
-아직 안 되는 것: 그림, 세로쓰기(설정은 읽음), 머리글·바닥글, 다단(段組), `.jttc`(압축). 자세한 내용은 [기획서](docs/PLAN.ko.md)([日本語](docs/PLAN.ja.md), [English](docs/PLAN.en.md)).
+- 글꼴: 명조와 고딕(문서의 글꼴 표로 판단), Word 내보내기에도 반영
+- **압축된 一太郎 문서(`.jttc`)**: 안의 문서를 풀어서 엶(LHA `-lh5-` 방식, 0.4.0)
+- 열리지 않는 파일 판별: Word·PDF·RTF·텍스트 등 무슨 파일인지 알려 줌(`sniff::kind`, WASM `fileKind`). 이름만 .jtd 인 RTF·텍스트는 편집기가 글자만 새 문서로 엶
+
+아직 안 되는 것: 그림, 세로쓰기(설정은 읽음), 머리글·바닥글, 다단(段組), 一太郎 Ver.7 이전 형식(`.jaw`, `.jbw` 등). 자세한 내용은 [기획서](docs/PLAN.ko.md)([日本語](docs/PLAN.ja.md), [English](docs/PLAN.en.md)).
 
 ## 편집기
 

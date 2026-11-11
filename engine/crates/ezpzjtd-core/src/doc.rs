@@ -581,6 +581,17 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
             "this file is RTF (rich text) with a .jtd name; open it in any word processor".into(),
         ));
     }
+    // a compressed Ichitaro file (.jttc): open the document packed inside it
+    if let Some(inner) = crate::sniff::unwrap_compressed(&bytes, limits.max_bytes)? {
+        if crate::sniff::kind(&inner) != "jtd" {
+            return Err(Error::Unsupported(
+                "compressed Ichitaro document (.jttc): the unpacked data is not a document we can read yet".into(),
+            ));
+        }
+        let mut doc = open_with(inner, limits)?;
+        doc.warnings.insert(0, "opened from a compressed Ichitaro file (.jttc)".into());
+        return Ok(doc);
+    }
     let cfb = Cfb::open(bytes)?;
     let mut warnings = cfb.warnings.clone();
     let summary = cfb
@@ -640,10 +651,6 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
                 sheets[0].name = n.clone();
             }
         }
-    } else if cfb.find("/JSCompDocument").is_some() {
-        return Err(Error::Unsupported(
-            "compressed Ichitaro document (.jttc / -lh5-) is not supported yet".into(),
-        ));
     } else {
         return Err(Error::NotJtd("no /DocumentText stream".into()));
     }

@@ -354,7 +354,8 @@ impl Editor {
             doc = Document::blank();
         }
         let flat = flatten(&doc.sheets[0].blocks);
-        let setup = doc.page.clone().unwrap_or_default();
+        let mut setup = doc.page.clone().unwrap_or_default();
+        setup.gothic = gothic_fonts(&doc);
         Editor {
             doc,
             sheet: 0,
@@ -1683,4 +1684,14 @@ fn char_class(c: char) -> u8 {
     } else {
         6
     }
+}
+
+/// `/Font` indices of Gothic faces (see [`crate::layout::is_gothic`]).
+pub fn gothic_fonts(doc: &Document) -> Vec<u16> {
+    doc.fonts
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| crate::layout::is_gothic(&f.name))
+        .map(|(i, _)| i as u16)
+        .collect()
 }

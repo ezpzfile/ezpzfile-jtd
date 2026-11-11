@@ -216,6 +216,7 @@ mod tests {
                 size: 10.5,
                 b: false,
                 i: false,
+                g: false,
                 color: None,
                 pre: false,
             }],

@@ -28,6 +28,10 @@ pub struct PageSetup {
     pub chars_per_line: u32,
     pub lines_per_page: u32,
     pub font_pt: f32,
+    /// `/Font` indices whose face is a Gothic (sans) face; the rest are drawn
+    /// as Mincho. Filled from the document's font table, not saved.
+    #[serde(skip)]
+    pub gothic: Vec<u16>,
 }
 
 fn thirty() -> f32 {
@@ -46,6 +50,7 @@ impl Default for PageSetup {
             chars_per_line: 40,
             lines_per_page: 40,
             font_pt: 10.5,
+            gothic: Vec::new(),
         }
     }
 }
@@ -99,6 +104,7 @@ impl PageSetup {
             chars_per_line: self.chars_per_line.clamp(4, 400),
             lines_per_page: self.lines_per_page.clamp(2, 400),
             font_pt: fin(self.font_pt, 4.0, 100.0, d.font_pt),
+            gothic: self.gothic.clone(),
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -166,6 +172,9 @@ pub enum Item {
         b: bool,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         i: bool,
+        /// Gothic (sans) face instead of Mincho.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        g: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         color: Option<String>,
         /// Half-width characters are drawn left-aligned in a half cell.
@@ -529,6 +538,7 @@ fn layout_para(
                 xsv.push(gx[q]);
             }
             if !s.trim().is_empty() {
+                let gothic = st.font.is_some_and(|f| ctx.setup.gothic.contains(&f));
                 ctx.items().push(Item::Text {
                     xs: xsv,
                     y: baseline,
@@ -536,6 +546,7 @@ fn layout_para(
                     size,
                     b: st.bold == Some(true),
                     i: st.italic == Some(true),
+                    g: gothic,
                     color: st.color.clone(),
                     pre: line[k].pre,
                 });
@@ -589,6 +600,7 @@ fn layout_para(
                             size: rs,
                             b: false,
                             i: false,
+                            g: false,
                             color: line[k].style.color.clone(),
                             pre: false,
                         });
@@ -838,4 +850,12 @@ pub fn layout_with(
         }
     }
     ctx.out
+}
+
+/// Is this face a Gothic (sans) face? Names as Ichitaro and Windows write them.
+pub fn is_gothic(name: &str) -> bool {
+    let n = name.to_lowercase();
+    ["ゴシック", "ｺﾞｼｯｸ", "gothic", "丸ゴ", "メイリオ", "meiryo", "游ゴ", "ui gothic", "arial", "helvetica", "sans", "ヒラギノ角", "角ゴ"]
+        .iter()
+        .any(|k| n.contains(k))
 }

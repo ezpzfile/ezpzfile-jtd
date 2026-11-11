@@ -47,8 +47,12 @@ Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese mi
 - document properties, including the **original file path** that Ichitaro leaves inside files
 - export: plain text, Markdown, HTML, JSON
 
+- typefaces: Mincho and Gothic (from the document's font table), also in Word export
+- **compressed Ichitaro documents (`.jttc`)**: the document inside is unpacked and opened (LHA `-lh5-`; 0.4.0)
+- telling what a file is when it does not open (Word, PDF, RTF, text, …: `sniff::kind`, WASM `fileKind`); the editor opens RTF or text saved under a .jtd name as a new document (text only)
+
 Not yet: pictures, vertical writing (the setting is read), headers and footers, columns (段組),
-`.jttc` (compressed). See the
+Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 
 ## Editor

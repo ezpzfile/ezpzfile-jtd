@@ -88,9 +88,13 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn rpr(r: &Run, base: f32) -> String {
+fn rpr(r: &Run, setup: &PageSetup) -> String {
+    let base = setup.font_pt;
     let s = &r.style;
     let mut x = String::new();
+    if s.font.is_some_and(|f| setup.gothic.contains(&f)) {
+        x.push_str("<w:rFonts w:ascii=\"ＭＳ ゴシック\" w:hAnsi=\"ＭＳ ゴシック\" w:eastAsia=\"ＭＳ ゴシック\"/>");
+    }
     if s.bold == Some(true) {
         x.push_str("<w:b/><w:bCs/>");
     }
@@ -174,7 +178,7 @@ fn para_xml(p: &Paragraph, setup: &PageSetup) -> String {
         x.push_str(&format!("<w:pPr>{ppr}</w:pPr>"));
     }
     for r in &p.runs {
-        let props = rpr(r, base);
+        let props = rpr(r, setup);
         match &r.ruby {
             Some(rt) => {
                 let size = r.style.size_pt.unwrap_or(base);
@@ -282,6 +286,14 @@ fn table_xml(t: &Table, setup: &PageSetup) -> String {
 }
 
 pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> String {
+    let mut own;
+    let setup = if setup.gothic.is_empty() {
+        own = setup.clone();
+        own.gothic = crate::edit::gothic_fonts(doc);
+        &own
+    } else {
+        setup
+    };
     let mut body = String::new();
     let sheets: Vec<usize> = match sheet {
         Some(s) => vec![s],

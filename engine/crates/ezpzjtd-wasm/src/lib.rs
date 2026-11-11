@@ -100,7 +100,7 @@ impl JtdEditor {
         let doc = ezpzjtd_core::open(bytes.to_vec()).map_err(js_err)?;
         Ok(JtdEditor {
             ed: Editor::new(doc),
-            original: Some(bytes.to_vec()),
+            original: Some(save_base(bytes, usize::MAX)),
             warnings: Vec::new(),
         })
     }
@@ -116,7 +116,7 @@ impl JtdEditor {
         ed.max_pages = l.max_pages;
         Ok(JtdEditor {
             ed,
-            original: Some(bytes.to_vec()),
+            original: Some(save_base(bytes, l.max_bytes)),
             warnings: Vec::new(),
         })
     }
@@ -395,4 +395,20 @@ impl Default for JtdEditor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The file .jtd saving patches: for a compressed file (.jttc), the document
+/// packed inside it, so saving writes a plain .jtd.
+fn save_base(bytes: &[u8], max: usize) -> Vec<u8> {
+    match ezpzjtd_core::sniff::unwrap_compressed(bytes, max) {
+        Ok(Some(inner)) => inner,
+        _ => bytes.to_vec(),
+    }
+}
+
+/// What kind of file this is ("jtd", "jttc", "doc", "zip", "pdf", "rtf",
+/// "text", "unknown", …). Used to explain why a file does not open.
+#[wasm_bindgen(js_name = fileKind)]
+pub fn file_kind(bytes: &[u8]) -> String {
+    ezpzjtd_core::sniff::kind(bytes).to_string()
 }
