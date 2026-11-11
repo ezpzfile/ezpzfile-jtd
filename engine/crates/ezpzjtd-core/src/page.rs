@@ -198,6 +198,7 @@ impl PageStyle {
                 10.5
             },
             gothic: Vec::new(),
+            frames: Vec::new(),
         }
     }
 }

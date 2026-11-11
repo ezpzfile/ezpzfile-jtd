@@ -257,6 +257,23 @@ impl JtdEditor {
         self.ed.size_step(up)
     }
     /// `"#rrggbb"`, or empty for automatic colour.
+    /// Pictures the pages draw (`Image` items carry the frame id): `[{"id":1,"mime":"image/gif"}]`.
+    #[wasm_bindgen(js_name = picturesJson)]
+    pub fn pictures_json(&self) -> String {
+        let list: Vec<serde_json::Value> = self
+            .ed
+            .doc
+            .pictures
+            .iter()
+            .map(|p| serde_json::json!({ "id": p.item, "mime": p.mime }))
+            .collect();
+        serde_json::Value::Array(list).to_string()
+    }
+    /// The bytes of the picture of frame `id` (empty if none).
+    #[wasm_bindgen(js_name = pictureData)]
+    pub fn picture_data(&self, id: u16) -> Vec<u8> {
+        self.ed.doc.pictures.iter().find(|p| p.item == id).map(|p| p.data.clone()).unwrap_or_default()
+    }
     /// Mincho (false) or Gothic (true) for the selection or what is typed next.
     #[wasm_bindgen(js_name = setGothic)]
     pub fn set_gothic(&mut self, on: bool) {

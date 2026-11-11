@@ -1,0 +1,2 @@
+// write every stream under a storage prefix to files: extract in.jtd prefix outdir
+fn main() { let a: Vec<String> = std::env::args().collect(); let c = ezpzjtd_core::cfb::Cfb::open(std::fs::read(&a[1]).unwrap()).unwrap(); std::fs::create_dir_all(&a[3]).unwrap(); for e in c.entries() { if e.path.starts_with(&a[2]) { if let Some(b) = c.read(&e.path) { if !b.is_empty() { std::fs::write(format!("{}/{}", a[3], e.path.trim_start_matches('/').replace('/', "__")), b).unwrap(); } } } } }

@@ -1,0 +1,1 @@
+fn main() { let p = std::env::args().nth(1).unwrap(); let c = ezpzjtd_core::cfb::Cfb::open(std::fs::read(&p).unwrap()).unwrap(); for e in c.entries() { let head = c.read(&e.path).map(|b| b.iter().take(8).map(|x| format!("{x:02x}")).collect::<String>()).unwrap_or_default(); println!("{:8} {} {}", e.size, e.path, head); } }

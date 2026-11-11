@@ -24,6 +24,7 @@ pub mod docx;
 pub mod edit;
 pub mod error;
 pub mod export;
+pub mod frames;
 pub mod jtdw;
 pub mod layout;
 pub mod lh5;

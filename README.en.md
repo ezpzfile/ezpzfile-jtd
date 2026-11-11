@@ -51,7 +51,9 @@ Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese mi
 - **compressed Ichitaro documents (`.jttc` templates, `.jtdc` documents)**: the document inside is unpacked and opened (LHA `-lh5-`; 0.4.0). All 17 real public files (7 .jttc, 10 .jtdc) open, and .jtdc text matches Ichitaro Viewer at 99.2% (checked in 0.4.3)
 - telling what a file is when it does not open (Word, PDF, RTF, text, …: `sniff::kind`, WASM `fileKind`); the editor opens RTF or text saved under a .jtd name as a new document (text only)
 
-Not yet: pictures, vertical writing (the setting is read), headers and footers, columns (段組),
+- **pictures**: GIF, JPEG, PNG and BMP pictures placed in a document are drawn where they sit on the page (`/Frame` frames and anchors in the text; 0.4.4, checked against Ichitaro Viewer), and stay when saving as .jtd
+
+Not yet: shapes and text boxes, pictures in Word export, vertical writing (the setting is read), headers and footers, columns (段組),
 Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 

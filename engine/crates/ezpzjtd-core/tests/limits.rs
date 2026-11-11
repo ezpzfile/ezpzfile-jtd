@@ -121,6 +121,7 @@ fn wild_page_setup_is_made_sane() {
         lines_per_page: u32::MAX,
         font_pt: 0.0,
         gothic: Vec::new(),
+        frames: Vec::new(),
     };
     let mut ed = Editor::new(new_document());
     ed.insert_text(&"あ\u{3000}".repeat(2000));

@@ -523,3 +523,26 @@ When the latest 一太郎 changes the paper or the character size it moves the l
 right margins to keep 字数 (B5: 17.01 / 17.00 mm), or lowers 字数 by a half
 column (12 pt on A4: 79 half-width columns).
 
+
+
+## 12. Pictures in frames (`/Frame`, `/EmbedItems`) **new (0.4.4)**
+
+Read from public files and checked against Ichitaro Viewer. Details and the reader are in
+`engine/crates/ezpzjtd-core/src/frames.rs`.
+
+- `/Frame`: `00 01 00 04 00 02 00 01`, then records `u16 type, u16 len, payload` (big-endian).
+  Type `0102` (56 bytes) is one frame: words `[1]` frame id, `[2]` kind (`1` embedded picture,
+  `2` text box, `4` figure), `[4]` item number, `[6]` page; from byte 26 of the record (head
+  included) `x, y, w, h` as u32 in 1/100 mm. **viewer**
+- `x` is measured from the left edge of the text area and `y` from the top of the line that
+  holds the frame's anchor. **viewer** (2 files compared on screen)
+- Anchor: a record of class `0000` in `/DocumentText`, payload `[0, 30, ffff, 507, 12, id, 0]`.
+  **observed** (anchor count = frame count in 10 picture files)
+- `/EmbedItems/EmbeddingInfo` (little-endian): `u32 count`, then from byte 16 one entry per
+  `Embedding n` storage: `+8` n, `+0x2a` the byte length L of a UTF-16 class name
+  (`JS.PictureCtrl.1`) that follows, then the frame id (u32) and 0x4C more bytes. The frame id
+  is the link; the frame's item number is not the storage number. **observed**
+- `/EmbedItems/Embedding n/Contents`: version (`08 00 01 00` or `09 00 01 00`), size, the
+  original file path (length-prefixed, Shift_JIS), then `u32` length (little-endian) and the
+  picture file itself (GIF, JPEG, PNG, BMP). `EmbeddedPress` (`JSSnapShot32`) is a preview.
+  **observed**

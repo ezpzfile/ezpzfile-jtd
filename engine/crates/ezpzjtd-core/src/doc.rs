@@ -190,6 +190,9 @@ pub struct Paragraph {
     pub indent: Option<Indent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feed: Option<LineFeed>,
+    /// Frames (pictures) anchored in this paragraph, by frame id (see `frames.rs`).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub frames: Vec<u16>,
     #[serde(skip)]
     pub src: Src<ParaSrc>,
 }
@@ -478,6 +481,11 @@ pub struct Document {
     pub sheets: Vec<Sheet>,
     /// Embedded objects (`Embedding n`, `OleItem n`, figures).
     pub objects: Vec<String>,
+    /// Frames of the main sheet and the pictures they show (`frames.rs`).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub frames: Vec<crate::frames::Frame>,
+    #[serde(skip)]
+    pub pictures: Vec<crate::frames::Picture>,
     pub warnings: Vec<String>,
     /// Page setup (文書スタイル) stored in the file, if it could be read.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -497,6 +505,8 @@ impl Document {
                 blocks: vec![Block::Paragraph(Paragraph::default())],
             }],
             objects: Vec::new(),
+            frames: Vec::new(),
+            pictures: Vec::new(),
             warnings: Vec::new(),
             page: None,
         }
@@ -671,12 +681,16 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
         .and_then(|b| crate::page::parse(&b))
         .map(|p| p.setup());
 
+    let frames = crate::frames::read_frames(&cfb, "");
+    let pictures = crate::frames::read_pictures(&cfb, &frames, limits.max_bytes);
     Ok(Document {
         format,
         summary,
         fonts,
         sheets,
         objects,
+        frames,
+        pictures,
         warnings,
         page,
     })
@@ -1164,6 +1178,13 @@ fn build_blocks(
             Token::Record { class: 0x0020, .. } => {
                 b.close_row();
                 b.close_table();
+            }
+            Token::Record { class: 0x0000, payload, .. } => {
+                if let Some(id) = crate::frames::anchor_id(payload) {
+                    if b.para.frames.len() < 256 {
+                        b.para.frames.push(id);
+                    }
+                }
             }
             Token::Record { .. } => {}
             Token::Text { start, text } => b.push_text(*start, text, false),

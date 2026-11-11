@@ -143,6 +143,7 @@ function fitNarrow() {
 }
 
 function setEditor(ed, name) {
+  dropPictures();
   if (S.ed) S.ed.free();
   HOST.resetOnce();
   S.edited = false;
@@ -252,6 +253,27 @@ function drawLine(g, it) {
 }
 
 /** Paint a display list in page coordinates (points). */
+/** The picture of frame `id` (a decoded image; repaints the pages when it finishes loading). */
+function picture(id) {
+  if (!S.pics) {
+    S.pics = new Map();
+    try {
+      for (const p of JSON.parse(S.ed.picturesJson())) {
+        const url = URL.createObjectURL(new Blob([S.ed.pictureData(p.id)], { type: p.mime }));
+        const img = new Image();
+        img.onload = () => { if (S.pics && S.pics.get(p.id) === img) refresh({ all: true, scroll: false }); };
+        img.src = url;
+        img.dataset.url = url;
+        S.pics.set(p.id, img);
+      }
+    } catch {}
+  }
+  return S.pics.get(id);
+}
+function dropPictures() {
+  if (S.pics) for (const img of S.pics.values()) URL.revokeObjectURL(img.dataset.url);
+  S.pics = null;
+}
 function paintItems(g, data, marks) {
   const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
   if (marks) {
@@ -264,6 +286,12 @@ function paintItems(g, data, marks) {
       g.moveTo(x + dx * 10, y); g.lineTo(x, y); g.lineTo(x, y + dy * 10);
     }
     g.stroke();
+  }
+  // pictures first, under the text
+  for (const it of data.items) {
+    if (it.t !== "Image") continue;
+    const img = picture(it.id);
+    if (img && img.complete && img.naturalWidth) g.drawImage(img, it.x, it.y, it.w, it.h);
   }
   g.textBaseline = "alphabetic";
   for (const it of data.items) {
@@ -554,7 +582,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.3")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.4")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */

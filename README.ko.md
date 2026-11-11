@@ -51,7 +51,9 @@ HWP의 [rhwp](https://github.com/edwardkim/rhwp)와 같은 생각으로 만들�
 - **압축된 一太郎 문서(`.jttc` 압축 서식, `.jtdc` 압축 문서)**: 안의 문서를 풀어서 엶(LHA `-lh5-` 방식, 0.4.0). 공개된 실제 파일 17개(.jttc 7, .jtdc 10)가 모두 열리고, .jtdc 본문은 一太郎ビューア 화면과 99.2% 일치(0.4.3에서 확인)
 - 열리지 않는 파일 판별: Word·PDF·RTF·텍스트 등 무슨 파일인지 알려 줌(`sniff::kind`, WASM `fileKind`). 이름만 .jtd 인 RTF·텍스트는 편집기가 글자만 새 문서로 엶
 
-아직 안 되는 것: 그림, 세로쓰기(설정은 읽음), 머리글·바닥글, 다단(段組), 一太郎 Ver.7 이전 형식(`.jaw`, `.jbw` 등). 자세한 내용은 [기획서](docs/PLAN.ko.md)([日本語](docs/PLAN.ja.md), [English](docs/PLAN.en.md)).
+- **그림(사진·삽화)**: 문서에 넣은 GIF, JPEG, PNG, BMP 그림을 쪽의 원래 자리에 표시(`/Frame` 틀과 본문 기준점, 0.4.4, 一太郎ビューア 화면과 대조). .jtd로 저장해도 남음
+
+아직 안 되는 것: 도형·글상자, Word 내보내기의 그림, 세로쓰기(설정은 읽음), 머리글·바닥글, 다단(段組), 一太郎 Ver.7 이전 형식(`.jaw`, `.jbw` 등). 자세한 내용은 [기획서](docs/PLAN.ko.md)([日本語](docs/PLAN.ja.md), [English](docs/PLAN.en.md)).
 
 ## 편집기
 

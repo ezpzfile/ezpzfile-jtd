@@ -358,6 +358,7 @@ impl Editor {
         let flat = flatten(&doc.sheets[0].blocks);
         let mut setup = doc.page.clone().unwrap_or_default();
         setup.gothic = gothic_fonts(&doc);
+        setup.frames = picture_frames(&doc);
         Editor {
             doc,
             sheet: 0,
@@ -1715,5 +1716,14 @@ pub fn gothic_fonts(doc: &Document) -> Vec<u16> {
         .enumerate()
         .filter(|(_, f)| crate::layout::is_gothic(&f.name))
         .map(|(i, _)| i as u16)
+        .collect()
+}
+
+/// Picture frames that have a picture to show, for layout.
+pub fn picture_frames(doc: &Document) -> Vec<(u16, i32, i32, u32, u32)> {
+    doc.frames
+        .iter()
+        .filter(|f| f.kind == 1 && doc.pictures.iter().any(|p| p.item == f.id))
+        .map(|f| (f.id, f.x, f.y, f.w, f.h))
         .collect()
 }

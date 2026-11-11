@@ -32,6 +32,10 @@ pub struct PageSetup {
     /// as Mincho. Filled from the document's font table, not saved.
     #[serde(skip)]
     pub gothic: Vec<u16>,
+    /// Picture frames by id, `(id, x, y, w, h)` in 1/100 mm: drawn where
+    /// their anchor's line is (see `frames.rs`). Filled from the document.
+    #[serde(skip)]
+    pub frames: Vec<(u16, i32, i32, u32, u32)>,
 }
 
 fn thirty() -> f32 {
@@ -51,6 +55,7 @@ impl Default for PageSetup {
             lines_per_page: 40,
             font_pt: 10.5,
             gothic: Vec::new(),
+            frames: Vec::new(),
         }
     }
 }
@@ -105,6 +110,7 @@ impl PageSetup {
             lines_per_page: self.lines_per_page.clamp(2, 400),
             font_pt: fin(self.font_pt, 4.0, 100.0, d.font_pt),
             gothic: self.gothic.clone(),
+            frames: self.frames.clone(),
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -180,6 +186,14 @@ pub enum Item {
         /// Half-width characters are drawn left-aligned in a half cell.
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         pre: bool,
+    },
+    /// A picture of a frame (`id` = frame id), drawn under the text.
+    Image {
+        id: u16,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
     },
     Line {
         x1: f32,
@@ -466,6 +480,21 @@ fn layout_para(
             ctx.new_page();
         }
         let top = ctx.y;
+        // pictures anchored in this paragraph: from the text area's left and this line's top
+        if li == 0 && !p.frames.is_empty() {
+            let (tl, mm) = (setup.left(), MM / 100.0);
+            for id in &p.frames {
+                if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
+                    ctx.items().push(Item::Image {
+                        id: *id,
+                        x: tl + fx as f32 * mm,
+                        y: top + fy as f32 * mm,
+                        w: fw as f32 * mm,
+                        h: fh as f32 * mm,
+                    });
+                }
+            }
+        }
         let baseline = top + h - (pitch - base) / 2.0 - base * 0.12;
         let lw: f32 = line.iter().map(|g| g.w).sum();
         let x0 = match p.align {
