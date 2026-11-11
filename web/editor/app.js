@@ -554,7 +554,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.2")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.3")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -1118,7 +1118,7 @@ async function openFile(file) {
     HOST.event("file", { ext: S.ext, pages: ed.pageCount(), kind: fileKindOf(bytes) });
     // page limit reached (a huge or damaged file): say so instead of trying to draw them all
     if (JSON.parse(ed.statusJson()).truncated) toast(tr("ページが多すぎるため、最初の {0} ページだけを表示しています", ed.pageCount()));
-    if (fileKindOf(bytes) === "jttc") toast(tr("圧縮された一太郎文書（.jttc）を開きました。上書き保存すると .jtd になります"));
+    if (fileKindOf(bytes) === "jttc") toast(tr("圧縮された一太郎文書（.jttc・.jtdc）を開きました。上書き保存すると .jtd になります"));
     const s = JSON.parse(ed.summaryJson());
     if (s.template && /[\\:]/.test(s.template)) toast(tr("この文書には元の保存場所が残っています（文書情報）"));
   } catch (err) {
@@ -1160,7 +1160,7 @@ const KIND_NAMES = {
   doc: "Word 文書（.doc）", zip: "Word・Excel などの文書（ZIP 形式）", pdf: "PDF", rtf: "リッチテキスト（RTF）",
   xls: "Excel ブック（.xls）", ppt: "PowerPoint（.ppt）", hwp: "ハングル文書（.hwp）", html: "Web ページ（HTML）",
   image: "画像", lzh: "LZH 圧縮ファイル", text: "テキスト", js_other: "ジャストシステムの別のソフトの文書（花子・三四郎など）",
-  jttc: "圧縮された一太郎文書（.jttc）", jtd: "一太郎文書", cfb_damaged: "壊れた文書ファイル", cfb_other: "Office 系の別の文書",
+  jttc: "圧縮された一太郎文書（.jttc・.jtdc）", jtd: "一太郎文書", cfb_damaged: "壊れた文書ファイル", cfb_other: "Office 系の別の文書",
   empty: "空のファイル",
 };
 function kindName(kind, ext) {

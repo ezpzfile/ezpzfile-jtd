@@ -231,7 +231,7 @@ const EN = {
   // ---- could not open (what the file is, why, what to do)
   "種類": "Type",
   "次にできること": "What you can do",
-  "圧縮された一太郎文書（.jttc）を開きました。上書き保存すると .jtd になります": "Opened a compressed Ichitaro document (.jttc). Saving writes a .jtd",
+  "圧縮された一太郎文書（.jttc・.jtdc）を開きました。上書き保存すると .jtd になります": "Opened a compressed Ichitaro document (.jttc or .jtdc). Saving writes a .jtd",
   "Word 文書（.doc）": "Word document (.doc)",
   "Word・Excel などの文書（ZIP 形式）": "Word, Excel or similar document (ZIP based)",
   "リッチテキスト（RTF）": "Rich text (RTF)",
@@ -243,7 +243,7 @@ const EN = {
   "LZH 圧縮ファイル": "LZH archive",
   "テキスト": "Text",
   "ジャストシステムの別のソフトの文書（花子・三四郎など）": "A document from another JustSystems program (Hanako, Sanshiro, …)",
-  "圧縮された一太郎文書（.jttc）": "Compressed Ichitaro document (.jttc)",
+  "圧縮された一太郎文書（.jttc・.jtdc）": "Compressed Ichitaro document (.jttc or .jtdc)",
   "一太郎文書": "Ichitaro document",
   "壊れた文書ファイル": "Damaged document file",
   "Office 系の別の文書": "Another Office-style document",

@@ -1,0 +1,1 @@
+fn main() { let p = std::env::args().nth(1).unwrap(); let d = ezpzjtd_core::open(std::fs::read(&p).unwrap()).unwrap(); let t = d.plain_text(); println!("{}", t.chars().take(300).collect::<String>()); }

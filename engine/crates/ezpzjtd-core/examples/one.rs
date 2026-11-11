@@ -2,6 +2,7 @@ use ezpzjtd_core::edit::{Editor, Pos};
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let bytes = std::fs::read(&a[1]).unwrap();
+    let bytes = ezpzjtd_core::sniff::unwrap_compressed(&bytes, usize::MAX).unwrap().unwrap_or(bytes);
     let doc = ezpzjtd_core::open(bytes.clone()).unwrap();
     let mut e = Editor::new(doc);
     let p: usize = a[2].parse().unwrap();

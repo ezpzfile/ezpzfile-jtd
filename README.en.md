@@ -48,7 +48,7 @@ Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese mi
 - export: plain text, Markdown, HTML, JSON
 
 - typefaces: Mincho and Gothic (from the document's font table), also in Word export; the editor sets Mincho or Gothic and saves it to .jtd (adds ＭＳ ゴシック to the font table; 0.4.2, opens in Ichitaro Viewer)
-- **compressed Ichitaro documents (`.jttc`)**: the document inside is unpacked and opened (LHA `-lh5-`; 0.4.0)
+- **compressed Ichitaro documents (`.jttc` templates, `.jtdc` documents)**: the document inside is unpacked and opened (LHA `-lh5-`; 0.4.0). All 17 real public files (7 .jttc, 10 .jtdc) open, and .jtdc text matches Ichitaro Viewer at 99.2% (checked in 0.4.3)
 - telling what a file is when it does not open (Word, PDF, RTF, text, …: `sniff::kind`, WASM `fileKind`); the editor opens RTF or text saved under a .jtd name as a new document (text only)
 
 Not yet: pictures, vertical writing (the setting is read), headers and footers, columns (段組),
