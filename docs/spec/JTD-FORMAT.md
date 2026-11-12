@@ -604,3 +604,12 @@ See `figure.rs` for the byte layouts. In short:
 - `/DocumentViewStyles` `1002` group 3 bit 1: 1 and 2 have both been seen
   with two columns; 字数 can be given for the whole width (83 on B4) and is
   then fitted to the column.
+
+- **0.5.1** Text box frame line: `/LayoutBox` record `6007` (02, u16 type: 1-4
+  dotted, 5 and 8 solid, 6 none) with `0401` (line width u32 #2, corner
+  radius #3, colour #6 `00 BB GG RR`). Figures of `/FigureData/layout_data
+  n` that are not anchored belong to the text box whose `/LayoutBoxText`
+  directory index is n, placed from its top left. Text boxes do not push
+  body lines down: lines narrow beside them and are set over them when no
+  room is left; photos (0x300) push lines below. A handout's list landed at
+  199 mm like 一太郎ビューア only this way.

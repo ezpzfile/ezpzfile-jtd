@@ -271,6 +271,18 @@ pub enum Item {
         #[serde(skip_serializing_if = "is_plain_kind")]
         k: u8,
     },
+    /// A frame line round a text box (`r` corner radius).
+    Rect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        r: f32,
+        lw: f32,
+        color: String,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        dot: bool,
+    },
     /// Editing marks (編集記号): "ret" paragraph end, "sp" full-width space,
     /// "pb" page break, "tab".
     Mark {
@@ -361,8 +373,10 @@ struct Ctx<'a> {
     col_step: f32,
     dx: f32,
     segs: Vec<(usize, usize, usize, f32)>,
-    /// Frames placed so far that text goes round: page, column, x1, y1, x2, y2.
-    wraps: Vec<(usize, u32, f32, f32, f32, f32)>,
+    /// Frames placed so far that text goes round: page, column, x1, y1, x2,
+    /// y2, and whether a line with no room beside it moves below it (a
+    /// picture) or is set over it (a text box).
+    wraps: Vec<(usize, u32, f32, f32, f32, f32, bool)>,
 }
 
 impl<'a> Ctx<'a> {
@@ -386,10 +400,19 @@ impl<'a> Ctx<'a> {
     /// between `y1` and `y2`, or the lowest bottom of the frames in the way
     /// when no stretch holds a few characters.
     fn free_span(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32) -> Result<(f32, f32), f32> {
+        match self.free_span_of(l, r, y1, y2, min_w, false) {
+            Ok(s) => Ok(s),
+            // a text box leaves no room: the text is set over it unless a
+            // picture is in the way too (checked on a school handout)
+            Err(_) => self.free_span_of(l, r, y1, y2, min_w, true),
+        }
+    }
+
+    fn free_span_of(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32, only_push: bool) -> Result<(f32, f32), f32> {
         let mut segs = vec![(l, r)];
         let mut low = f32::MIN;
-        for &(pg, col, x1, fy1, x2, fy2) in &self.wraps {
-            if pg != self.page || col != self.col || fy1 >= y2 || fy2 <= y1 || x2 <= l || x1 >= r {
+        for &(pg, col, x1, fy1, x2, fy2, push) in &self.wraps {
+            if (only_push && !push) || pg != self.page || col != self.col || fy1 >= y2 || fy2 <= y1 || x2 <= l || x1 >= r {
                 continue;
             }
             low = low.max(fy2);
@@ -1215,7 +1238,7 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
             let (x, y, w, h) = turn(tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
             ctx.items().push(Item::Image { id: *id, x, y, w, h });
             if setup.wrap.contains(id) {
-                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h));
+                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h, true));
             }
         }
         if let Some((_, fx, fy, fw, fh, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
@@ -1226,7 +1249,7 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
                 ctx.items().push(it.moved(dx, dy));
             }
             if setup.wrap.contains(id) {
-                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh));
+                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh, false));
             }
         }
     }
@@ -1241,7 +1264,7 @@ impl Item {
                 xs.iter_mut().for_each(|x| *x += dx);
                 *y += dy;
             }
-            Item::Image { x, y, .. } | Item::Mark { x, y, .. } => {
+            Item::Image { x, y, .. } | Item::Mark { x, y, .. } | Item::Rect { x, y, .. } => {
                 *x += dx;
                 *y += dy;
             }
@@ -1266,7 +1289,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
     // (checked on a school handout: sizes and texts agree box by box)
     for (k, f) in doc.frames.iter().filter(|f| f.kind == 2).enumerate() {
         let Some(b) = doc.boxes.get(k) else { continue };
-        if b.blocks.is_empty() || f.w == 0 || f.h == 0 {
+        if (b.blocks.is_empty() && !doc.pictures.iter().any(|p| p.layout == Some(b.layout))) || f.w == 0 || f.h == 0 {
             continue;
         }
         let font = setup.font_pt.clamp(4.0, 100.0);
@@ -1276,7 +1299,9 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         let inner_h = (bh - pt - pb).max(1.0) * MM;
         let lines = ((inner_h / (font * 1.5)).floor() as u32).max(1);
         let pitch = inner_h / lines as f32;
-        let n = lines.max(2);
+        // room below the box too, so that anchors on later lines still place
+        // their pictures; text past the box is cut off below
+        let n = (lines + 200).min(((1400.0 * MM - pt * MM) / pitch).floor().max(2.0) as u32).max(2);
         let width = bw.max(60.0);
         let height = (pt + pitch * n as f32 / MM + 1.0).max(60.0);
         let sub = PageSetup {
@@ -1294,12 +1319,40 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             base_face: setup.base_face,
             font_names: setup.font_names.clone(),
             base_font: setup.base_font,
+            // pictures and figures anchored in the box's own text (children
+            // drawn in an empty box next to a heading)
+            frames: setup.frames.clone(),
             ..PageSetup::default()
         };
         let l = layout_with(&b.blocks, &sub, false, None, 1);
         let Some(page) = l.pages.first() else { continue };
         let max_y = (pt + bh) * MM;
-        let items: Vec<Item> = page
+        let mut items: Vec<Item> = Vec::new();
+        // figures kept with this box's layout and not anchored in its text:
+        // placed from the box's top left
+        let anchored: Vec<u16> = b.blocks.iter().flat_map(|bl| match bl {
+            crate::doc::Block::Paragraph(p) => p.frames.clone(),
+            crate::doc::Block::Table(t) => t.rows.iter().flat_map(|r| r.frames.clone()).collect(),
+        }).collect();
+        for pic in doc.pictures.iter().filter(|p| p.layout == Some(b.layout) && !anchored.contains(&p.item)) {
+            if let Some(g) = doc.frames.iter().find(|g| g.id == pic.item) {
+                let mm = MM / 100.0;
+                items.push(Item::Image { id: g.id, x: g.x as f32 * mm, y: g.y as f32 * mm, w: g.w as f32 * mm, h: g.h as f32 * mm });
+            }
+        }
+        if let Some(bd) = &b.border {
+            items.push(Item::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: bw * MM,
+                h: bh * MM,
+                r: (bd.radius_mm * MM).min(bw.min(bh) * MM / 2.0),
+                lw: bd.width_mm * MM,
+                color: bd.color.clone(),
+                dot: bd.dotted,
+            });
+        }
+        items.extend(page
             .items
             .iter()
             .filter(|it| match it {
@@ -1307,8 +1360,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 Item::Mark { .. } => false,
                 _ => true,
             })
-            .cloned()
-            .collect();
+            .cloned());
         out.push((f.id, f.x, f.y, f.w, f.h, items));
     }
     out

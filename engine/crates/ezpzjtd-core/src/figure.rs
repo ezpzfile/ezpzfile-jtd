@@ -59,6 +59,7 @@ pub struct Figure {
 struct Out {
     s: String,
     cmds: usize,
+    ids: usize,
 }
 
 impl Out {
@@ -181,7 +182,25 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
                 }
                 r += 2;
             }
-            let op = if pat == 0 || pat == 256 { "" } else { " fill-opacity=\"0.35\"" };
+            // fill: 0 solid, 256 a gradient from the fill colour to the
+            // second colour (then there is no line), others a pattern of dots
+            // (a grey dotted ellipse behind a handout's title)
+            let (fill, line) = match pat {
+                0 => (fill, line),
+                256 => {
+                    out.ids += 1;
+                    let id = out.ids;
+                    let _ = write!(out.s, "<defs><linearGradient id=\"g{id}\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{fill}\"/><stop offset=\"1\" stop-color=\"{line}\"/></linearGradient></defs>");
+                    (format!("url(#g{id})"), "none".to_string())
+                }
+                _ => {
+                    out.ids += 1;
+                    let id = out.ids;
+                    let _ = write!(out.s, "<defs><pattern id=\"p{id}\" width=\"24\" height=\"24\" patternUnits=\"userSpaceOnUse\"><circle cx=\"6\" cy=\"6\" r=\"4.5\" fill=\"{fill}\"/><circle cx=\"18\" cy=\"18\" r=\"4.5\" fill=\"{fill}\"/></pattern></defs>");
+                    (format!("url(#p{id})"), line)
+                }
+            };
+            let op = "";
             for off in offs {
                 if off + 10 > ln {
                     break;
@@ -238,7 +257,7 @@ pub fn figures(b: &[u8]) -> Vec<Figure> {
         if let Some((x1, y1, x2, y2)) = figure_box(b, o) {
             let (w, h) = ((x2 as i64 - x1 as i64).max(1), (y2 as i64 - y1 as i64).max(1));
             if w < 4_000_000 && h < 4_000_000 {
-                let mut out = Out { s: String::new(), cmds: 0 };
+                let mut out = Out { s: String::new(), cmds: 0, ids: 0 };
                 figure_rec(b, o, 0, &mut out);
                 // lines a little past the box stay visible
                 let pad = 20;
@@ -267,7 +286,7 @@ pub fn snapshot_svg(b: &[u8]) -> Option<String> {
     if !(1..=2_000_000).contains(&w) || !(1..=2_000_000).contains(&h) {
         return None;
     }
-    let mut out = Out { s: String::new(), cmds: 0 };
+    let mut out = Out { s: String::new(), cmds: 0, ids: 0 };
     let mut objs: Vec<(i32, bool, String, i32)> = Vec::new(); // handle, is brush, colour, width
     let (mut brush, mut pen): (Option<String>, Option<(String, i32)>) = (None, None);
     let mut path = String::new();

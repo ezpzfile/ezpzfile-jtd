@@ -155,7 +155,7 @@ fn text_runs(text: &str, props: &str) -> String {
 /// Pictures written so far: the frame's picture goes to `word/media`.
 struct Cx<'a> {
     doc: &'a Document,
-    used: Vec<(&'a crate::frames::Picture, &'static str)>,
+    used: Vec<(std::borrow::Cow<'a, [u8]>, &'static str)>,
 }
 
 fn ext_of(mime: &str) -> &'static str {
@@ -164,6 +164,7 @@ fn ext_of(mime: &str) -> &'static str {
         "image/jpeg" => "jpeg",
         "image/gif" => "gif",
         "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
         _ => "",
     }
 }
@@ -172,7 +173,7 @@ fn ext_of(mime: &str) -> &'static str {
 /// left of the text area, `y` from the top of the anchor's line, behind the
 /// text the way the editor draws it.
 fn picture_xml(id: u16, cx: &mut Cx, in_cell: bool) -> String {
-    let Some(f) = cx.doc.frames.iter().find(|f| f.id == id && f.kind == 1) else {
+    let Some(f) = cx.doc.frames.iter().find(|f| f.id == id && (f.kind == 1 || f.kind == 4)) else {
         return String::new();
     };
     let Some(pic) = cx.doc.pictures.iter().find(|p| p.item == id) else {
@@ -182,9 +183,16 @@ fn picture_xml(id: u16, cx: &mut Cx, in_cell: bool) -> String {
     if ext.is_empty() || pic.data.is_empty() {
         return String::new();
     }
-    cx.used.push((pic, ext));
+    cx.used.push((std::borrow::Cow::Borrowed(&pic.data[..]), ext));
     let n = cx.used.len();
-    let rid = format!("rIdImg{n}");
+    // a figure is SVG: Word takes it with a PNG beside it for older readers
+    // (a clear pixel here), LibreOffice and Word 2016 and later draw the SVG
+    let blip = if ext == "svg" {
+        cx.used.push((std::borrow::Cow::Owned(crate::figure::png_rgba(1, 1, &[0, 0, 0, 0])), "png"));
+        format!("<a:blip r:embed=\"rIdImg{}\"><a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"rIdImg{n}\"/></a:ext></a:extLst></a:blip>", n + 1)
+    } else {
+        format!("<a:blip r:embed=\"rIdImg{n}\"/>")
+    };
     let emu = |v: i64| v * 360; // 1/100 mm
     let (x, y, w, h) = (emu(f.x as i64), emu(f.y as i64), emu(f.w as i64).max(1), emu(f.h as i64).max(1));
     // a frame on the page is measured from the paper's edges, the rest from the anchor's line
@@ -196,7 +204,7 @@ fn picture_xml(id: u16, cx: &mut Cx, in_cell: bool) -> String {
 <wp:extent cx=\"{w}\" cy=\"{h}\"/><wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapNone/><wp:docPr id=\"{n}\" name=\"Picture {n}\"/>\
 <wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>\
 <a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">\
-<pic:nvPicPr><pic:cNvPr id=\"{n}\" name=\"image{n}.{ext}\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"{rid}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
+<pic:nvPicPr><pic:cNvPr id=\"{n}\" name=\"image{n}.{ext}\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill>{blip}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
 <pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{w}\" cy=\"{h}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"
     )
 }
@@ -418,7 +426,7 @@ pub fn to_docx(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> Vec<u
     let mut exts: Vec<&str> = cx.used.iter().map(|u| u.1).collect();
     exts.sort();
     exts.dedup();
-    let defaults: String = exts.iter().map(|e| format!("<Default Extension=\"{e}\" ContentType=\"image/{e}\"/>")).collect();
+    let defaults: String = exts.iter().map(|e| format!("<Default Extension=\"{e}\" ContentType=\"image/{}\"/>", if *e == "svg" { "svg+xml" } else { e })).collect();
     let pic_rels: String = (1..=cx.used.len())
         .map(|n| format!("<Relationship Id=\"rIdImg{n}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image{n}.{}\"/>", cx.used[n - 1].1))
         .collect();
@@ -449,8 +457,8 @@ pub fn to_docx(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> Vec<u
         ("docProps/core.xml", core.into_bytes()),
         ("docProps/app.xml", app.as_bytes().to_vec()),
     ];
-    for (n, (pic, _)) in names.iter().zip(&cx.used) {
-        files.push((n.as_str(), pic.data.clone()));
+    for (n, (data, _)) in names.iter().zip(&cx.used) {
+        files.push((n.as_str(), data.to_vec()));
     }
     zip(&files)
 }

@@ -38,8 +38,10 @@ pub struct Frame {
     #[serde(default)]
     pub fixed: bool,
     /// Word [25] has 0x100 or 0x200 and not 4: the text goes round the
-    /// frame (回り込み). Text boxes carry 0xb80 and photos 0x300; with 4 (a
-    /// picture behind a card's text, 0x304 or 4) the text runs under it.
+    /// frame (回り込み): photos 0x300. With 4 (a picture behind a card's
+    /// text, 0x304 or 4) the text runs under it. Text boxes (0xb80) do not
+    /// push the text: a handout's lines land where 一太郎ビューア puts them
+    /// (199 mm) only when they are left in place.
     #[serde(default)]
     pub wrap: bool,
 }
@@ -48,6 +50,11 @@ pub struct Frame {
 pub struct Picture {
     /// The frame id that shows this picture
     pub item: u16,
+    /// For a figure kept with a text box's layout (`/FigureData/layout_data
+    /// n`): that layout number n (the text box's number in
+    /// `/LayoutBoxText`). Placed from the box's top left.
+    #[serde(skip)]
+    pub layout: Option<u32>,
     pub mime: &'static str,
     #[serde(skip)]
     pub data: Vec<u8>,
@@ -165,7 +172,7 @@ pub fn read_pictures(cfb: &Cfb, frames: &[Frame], max_bytes: usize) -> Vec<Pictu
             if total > max_bytes {
                 break;
             }
-            out.push(Picture { item: f.id, mime, data });
+            out.push(Picture { item: f.id, mime, data, layout: None });
         }
     }
     // figures (図形): each frame of kind 4 shows the figure of its size
@@ -177,21 +184,22 @@ pub fn read_pictures(cfb: &Cfb, frames: &[Frame], max_bytes: usize) -> Vec<Pictu
             .collect();
         // main_data first, then layout_data n by n
         paths.sort_by_key(|p| (!p.contains("/main_data/"), p.split("layout_data ").nth(1).and_then(|r| r.split('/').next()).and_then(|n| n.trim().parse::<u32>().ok()).unwrap_or(0)));
-        let mut figs: Vec<Option<crate::figure::Figure>> = Vec::new();
+        let mut figs: Vec<Option<(crate::figure::Figure, Option<u32>)>> = Vec::new();
         for p in paths {
+            let layout = p.split("layout_data ").nth(1).and_then(|r| r.split('/').next()).and_then(|n| n.trim().parse::<u32>().ok());
             if let Some(b) = cfb.read(p) {
-                figs.extend(crate::figure::figures(&b).into_iter().map(Some));
+                figs.extend(crate::figure::figures(&b).into_iter().map(|f| Some((f, layout))));
             }
         }
         let near = |a: u32, b: u32| a.abs_diff(b) <= 20.max(a / 50);
         for f in frames.iter().filter(|f| f.kind == 4) {
-            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|g| near(g.w, f.w) && near(g.h, f.h))) else { continue };
-            let g = slot.take().unwrap();
+            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|(g, _)| near(g.w, f.w) && near(g.h, f.h))) else { continue };
+            let (g, layout) = slot.take().unwrap();
             total += g.svg.len();
             if total > max_bytes {
                 break;
             }
-            out.push(Picture { item: f.id, mime: "image/svg+xml", data: g.svg.into_bytes() });
+            out.push(Picture { item: f.id, mime: "image/svg+xml", data: g.svg.into_bytes(), layout });
         }
     }
     out
@@ -249,23 +257,42 @@ pub struct TextBox {
     pub blocks: Vec<crate::doc::Block>,
     /// left, right, top, bottom
     pub pad: [u16; 4],
+    /// The box's frame line, when it has one.
+    pub border: Option<Border>,
+    /// The box's layout number (its index in the `/LayoutBoxText` directory).
+    pub layout: u32,
+}
+
+/// A text box's frame line (`/LayoutBox` records `6007` and `0401`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Border {
+    /// `#rrggbb`
+    pub color: String,
+    pub width_mm: f32,
+    /// Corner radius
+    pub radius_mm: f32,
+    pub dotted: bool,
+}
+
+#[derive(Default)]
+struct BoxStyle {
+    pad: [u16; 4],
+    line: Option<u16>,
+    shape: Option<(u32, u32, String)>,
 }
 
 /// Inner margins of each box of `/LayoutBox`, in box order. Each box is
 /// `0201` (8 bytes), `6668` + u16 0 + u16 length holding records `60xx`
 /// (6006: u16 flags, then left, right, top, bottom), then `0401`, `0403`.
-fn box_pads(b: &[u8]) -> Vec<[u16; 4]> {
-    let mut out = Vec::new();
+fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
+    let mut out: Vec<BoxStyle> = Vec::new();
     let mut o = 8usize;
-    let mut pad = None;
+    let be32 = |q: usize| b.get(q..q + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]));
     while o + 4 <= b.len() && out.len() < 4096 {
         let tag = u16::from_be_bytes([b[o], b[o + 1]]);
         let len = u16::from_be_bytes([b[o + 2], b[o + 3]]) as usize;
         if tag == 0x0201 {
-            if let Some(p) = pad.take() {
-                out.push(p);
-            }
-            pad = Some([0u16; 4]);
+            out.push(BoxStyle::default());
             o += 4 + len;
         } else if tag == 0x6668 && o + 6 <= b.len() {
             let glen = u16::from_be_bytes([b[o + 4], b[o + 5]]) as usize;
@@ -273,21 +300,30 @@ fn box_pads(b: &[u8]) -> Vec<[u16; 4]> {
             while q + 4 <= end {
                 let t = u16::from_be_bytes([b[q], b[q + 1]]);
                 let l = u16::from_be_bytes([b[q + 2], b[q + 3]]) as usize;
-                if t == 0x6006 && l >= 10 && q + 14 <= end {
-                    let v = |k: usize| u16::from_be_bytes([b[q + 6 + k * 2], b[q + 7 + k * 2]]);
-                    if let Some(p) = pad.as_mut() {
-                        *p = [v(0), v(1), v(2), v(3)].map(|x| x.min(3000));
+                let v = |k: usize| u16::from_be_bytes([b[q + 6 + k * 2], b[q + 7 + k * 2]]);
+                if let Some(st) = out.last_mut() {
+                    if t == 0x6006 && l >= 10 && q + 14 <= end {
+                        st.pad = [v(0), v(1), v(2), v(3)].map(|x| x.min(3000));
+                    }
+                    // 6007: 02, u16 line type (1-8 seen on boxes with a line)
+                    if t == 0x6007 && l >= 3 && q + 7 <= end && b[q + 4] == 2 {
+                        st.line = Some(u16::from_be_bytes([b[q + 5], b[q + 6]]));
                     }
                 }
                 q += 4 + l;
             }
             o = end;
         } else {
+            // 0401: u32 ×5 (the second is the line width and the third the
+            // corner radius, 1/100 mm), then the line colour 00 BB GG RR
+            if tag == 0x0401 && len >= 24 {
+                if let (Some(st), Some(r), Some(w), Some(c)) = (out.last_mut(), be32(o + 12), be32(o + 8), be32(o + 24)) {
+                    let c = c.to_be_bytes();
+                    st.shape = Some((r, w, format!("#{:02x}{:02x}{:02x}", c[3], c[2], c[1])));
+                }
+            }
             o += 4 + len;
         }
-    }
-    if let Some(p) = pad {
-        out.push(p);
     }
     out
 }
@@ -297,16 +333,29 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
     let Some(raw) = cfb.read("/LayoutBoxText") else {
         return Vec::new();
     };
-    let Ok(subs) = crate::ssmg::substreams(&raw) else {
+    let Ok(subs) = crate::ssmg::substreams_indexed(&raw) else {
         return Vec::new();
     };
-    let pads = cfb.read("/LayoutBox").map(|b| box_pads(&b)).unwrap_or_default();
+    let styles = cfb.read("/LayoutBox").map(|b| box_styles(&b)).unwrap_or_default();
     subs.iter()
         .take(2048)
         .enumerate()
-        .map(|(i, s)| TextBox {
+        .map(|(i, (layout, s))| TextBox {
+            layout: *layout,
             blocks: crate::doc::blocks_from_textv(s, style_budget).unwrap_or_default(),
-            pad: pads.get(i).copied().unwrap_or([200, 200, 100, 100]),
+            pad: styles.get(i).map_or([200, 200, 100, 100], |s| s.pad),
+            border: styles.get(i).and_then(|s| {
+                // line types seen against 一太郎ビューア: 1-4 dotted, 5 and 8
+                // solid, 6 none (an empty box round a picture), larger none
+                let line = s.line.filter(|&l| matches!(l, 1..=5 | 8))?;
+                let (r, w, color) = s.shape.clone()?;
+                Some(Border {
+                    color,
+                    width_mm: (w as f32 / 100.0).clamp(0.1, 1.0),
+                    radius_mm: (r as f32 / 100.0).clamp(0.0, 20.0),
+                    dotted: line <= 4,
+                })
+            }),
         })
         .collect()
 }
