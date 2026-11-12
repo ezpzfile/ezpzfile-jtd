@@ -187,8 +187,8 @@ fn picture_xml(id: u16, cx: &mut Cx, in_cell: bool) -> String {
     let rid = format!("rIdImg{n}");
     let emu = |v: i64| v * 360; // 1/100 mm
     let (x, y, w, h) = (emu(f.x as i64), emu(f.y as i64), emu(f.w as i64).max(1), emu(f.h as i64).max(1));
-    // a frame on the page is measured from the margins, the rest from the anchor's line
-    let (hrel, vrel) = if f.fixed { ("margin", "margin") } else { ("column", if in_cell { "paragraph" } else { "line" }) };
+    // a frame on the page is measured from the paper's edges, the rest from the anchor's line
+    let (hrel, vrel) = if f.fixed { ("page", "page") } else { ("column", if in_cell { "paragraph" } else { "line" }) };
     let lic = if in_cell { "0" } else { "1" };
     format!(
         "<w:r><w:drawing><wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"{n}\" behindDoc=\"1\" locked=\"0\" layoutInCell=\"{lic}\" allowOverlap=\"1\">\

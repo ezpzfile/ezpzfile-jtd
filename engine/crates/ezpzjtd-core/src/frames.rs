@@ -33,10 +33,15 @@ pub struct Frame {
     pub y: i32,
     pub w: u32,
     pub h: u32,
-    /// Word [6] = 2: placed on the page (from the text area's top left of
-    /// the anchor's page) rather than from the anchor's line (word [6] = 1).
+    /// Word [6] = 2: placed on the anchor's page, measured from the paper's
+    /// top left, rather than from the anchor's line (word [6] = 1).
     #[serde(default)]
     pub fixed: bool,
+    /// Word [25] has 0x100 or 0x200 and not 4: the text goes round the
+    /// frame (回り込み). Text boxes carry 0xb80 and photos 0x300; with 4 (a
+    /// picture behind a card's text, 0x304 or 4) the text runs under it.
+    #[serde(default)]
+    pub wrap: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -78,6 +83,7 @@ pub fn read_frames(cfb: &Cfb, base: &str) -> Vec<Frame> {
                 w: be32(r, 34).unwrap_or(0),
                 h: be32(r, 38).unwrap_or(0),
                 fixed: w(6) == 2,
+                wrap: w(25) & 0x300 != 0 && w(25) & 4 == 0,
             });
         }
         o += 4 + l;

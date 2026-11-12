@@ -567,7 +567,11 @@ Read from public files and checked against Ichitaro Viewer. Details and the read
   **observed** on a school handout (44 boxes; sizes and texts agree)
 - **Frame placement.** Word [6] of a `0102` frame record: 1 = from the
   anchor's line (as in §12), 2 = on the page (from the top left of the text
-  area of the anchor's page). In ruled forms an anchor can sit between a
+  area of the anchor's page; corrected in 0.4.9: from the **paper's** top
+  left, checked with the viewer on an A4 handout with 20/17 mm margins).
+  Word [25]: 0x100/0x200 without 4 = the text goes round the frame
+  (回り込み; text boxes 0xb80, photos 0x300); with 4 (0x304, or 4 alone)
+  the text runs under the picture. In ruled forms an anchor can sit between a
   line's end (`000E`) and the next line header with no text: it belongs to
   that next line. **observed**
 - **Columns (段組).** `/DocumentViewStyles` record `1002`, group 3: bit 1

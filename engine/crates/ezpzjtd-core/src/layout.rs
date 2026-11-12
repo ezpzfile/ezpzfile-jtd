@@ -55,6 +55,9 @@ pub struct PageSetup {
     /// Frames placed on the page rather than from their anchor's line.
     #[serde(skip)]
     pub fixed: Vec<u16>,
+    /// Frames the text goes round (回り込み), by id.
+    #[serde(skip)]
+    pub wrap: Vec<u16>,
     /// 縦組み: the page is laid out turned a quarter turn (width and height
     /// swapped, the right margin on top), so lines run top to bottom and
     /// follow each other from right to left once the drawing is turned back.
@@ -97,6 +100,7 @@ impl Default for PageSetup {
             frames: Vec::new(),
             boxes: Default::default(),
             fixed: Vec::new(),
+            wrap: Vec::new(),
             vertical: false,
             columns: 1,
             col_gap_mm: 0.0,
@@ -161,6 +165,7 @@ impl PageSetup {
             frames: self.frames.clone(),
             boxes: self.boxes.clone(),
             fixed: self.fixed.clone(),
+            wrap: self.wrap.clone(),
             vertical: self.vertical,
             columns: self.columns.clamp(1, 10),
             col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
@@ -356,6 +361,8 @@ struct Ctx<'a> {
     col_step: f32,
     dx: f32,
     segs: Vec<(usize, usize, usize, f32)>,
+    /// Frames placed so far that text goes round: page, column, x1, y1, x2, y2.
+    wraps: Vec<(usize, u32, f32, f32, f32, f32)>,
 }
 
 impl<'a> Ctx<'a> {
@@ -373,6 +380,38 @@ impl<'a> Ctx<'a> {
         self.dx = 0.0;
         self.real_new_page();
         self.segs.push((self.page, self.out.pages[self.page].items.len(), self.out.lines.len(), 0.0));
+    }
+
+    /// The widest stretch of `l..r` that no frame the text goes round covers
+    /// between `y1` and `y2`, or the lowest bottom of the frames in the way
+    /// when no stretch holds a few characters.
+    fn free_span(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32) -> Result<(f32, f32), f32> {
+        let mut segs = vec![(l, r)];
+        let mut low = f32::MIN;
+        for &(pg, col, x1, fy1, x2, fy2) in &self.wraps {
+            if pg != self.page || col != self.col || fy1 >= y2 || fy2 <= y1 || x2 <= l || x1 >= r {
+                continue;
+            }
+            low = low.max(fy2);
+            let mut next = Vec::new();
+            for (a, b) in segs {
+                if x2 <= a || x1 >= b {
+                    next.push((a, b));
+                    continue;
+                }
+                if x1 > a {
+                    next.push((a, x1));
+                }
+                if x2 < b {
+                    next.push((x2, b));
+                }
+            }
+            segs = next;
+        }
+        match segs.into_iter().filter(|s| s.1 - s.0 >= min_w).max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0))) {
+            Some(s) => Ok(s),
+            None => Err(low),
+        }
     }
 
     /// A page break (改ページ): the next page, whatever column this is.
@@ -561,15 +600,65 @@ fn layout_para(
     let (left, right) = (outer_l + il, (outer_r - ir).max(outer_l + il + base));
     let width = (right - left).max(base);
     let ranges = break_lines_2(&gs, (first.1 - first.0).max(base), width);
+    // Text going round frames (回り込み): when frames that it goes round are
+    // on this page or anchored here, break line by line into the room left
+    // beside them, and move below a frame that leaves no room.
+    let wrapping = !in_cell
+        && (ctx.wraps.iter().any(|w| w.0 == ctx.page) || p.frames.iter().any(|f| setup.wrap.contains(f)));
+    let mut frames_done = false;
+    if wrapping && !p.frames.is_empty() {
+        if ctx.y + pitch > setup.bottom() + 0.5 && ctx.y > setup.top() + 0.5 {
+            ctx.new_page();
+        }
+        let y = ctx.y;
+        push_frames(ctx, &p.frames, y);
+        frames_done = true;
+    }
     let mut used = 0.0;
-    let nlines = ranges.len();
+    let mut nlines = ranges.len();
     let mut model_pos = 0usize;
-    for (li, &(a, b)) in ranges.iter().enumerate() {
+    let (mut li, mut pos) = (0usize, 0usize);
+    loop {
         if ctx.out.truncated {
             break;
         }
+        let (a, b, left, right) = if !wrapping {
+            let Some(&(a, b)) = ranges.get(li) else { break };
+            let (l, r) = if li == 0 { first } else { (left, right) };
+            (a, b, l, r)
+        } else {
+            if li > 0 && pos >= gs.len() {
+                break;
+            }
+            let (l0, r0) = if li == 0 { first } else { (left, right) };
+            let mut lr = (l0, r0);
+            for _ in 0..64 {
+                match ctx.free_span(l0, r0, ctx.y, ctx.y + pitch, (base * 3.0).min(r0 - l0)) {
+                    Ok(sp) => {
+                        lr = sp;
+                        break;
+                    }
+                    Err(low) => {
+                        // the next line of the grid below the frame
+                        let top = setup.top();
+                        let y = top + ((low - top) / pitch).ceil().max(0.0) * pitch;
+                        if y + pitch > setup.bottom() + 0.5 {
+                            ctx.new_page();
+                        } else {
+                            ctx.y = y.max(ctx.y + 0.01);
+                        }
+                    }
+                }
+            }
+            let rest = &gs[pos..];
+            let e = break_lines(rest, (lr.1 - lr.0).max(base)).first().map_or(rest.len(), |r| r.1);
+            let e = if rest.is_empty() { 0 } else { e.max(1) };
+            let (a, b) = (pos, pos + e);
+            pos = b;
+            nlines = if pos >= gs.len() { li + 1 } else { li + 2 };
+            (a, b, lr.0, lr.1)
+        };
         let line = &gs[a..b];
-        let (left, right) = if li == 0 { first } else { (left, right) };
         let width = (right - left).max(base);
         let max_size = line
             .iter()
@@ -595,7 +684,7 @@ fn layout_para(
         }
         let top = ctx.y;
         // pictures anchored in this paragraph: from the text area's left and this line's top
-        if li == 0 && !p.frames.is_empty() {
+        if li == 0 && !p.frames.is_empty() && !frames_done {
             push_frames(ctx, &p.frames, top);
         }
         let baseline = top + h - (pitch - base) / 2.0 - base * 0.12;
@@ -761,6 +850,7 @@ fn layout_para(
             .unwrap_or(h);
         ctx.y += adv;
         used += adv;
+        li += 1;
     }
     used
 }
@@ -828,6 +918,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                 col_step: 0.0,
                 dx: 0.0,
                 segs: Vec::new(),
+                wraps: Vec::new(),
             };
             scratch.out.pages.push(Page {
                 w: 0.0,
@@ -966,6 +1057,7 @@ pub fn layout_with(
         col_step: col_w + gap,
         dx: 0.0,
         segs: Vec::new(),
+        wraps: Vec::new(),
     };
     ctx.new_page();
     let mut flat = 0usize;
@@ -1083,7 +1175,7 @@ pub fn face_class(name: &str) -> u8 {
 /// Laid-out text boxes shared between copies of a setup (see
 /// [`PageSetup::boxes`]).
 #[derive(Debug, Clone, Default)]
-pub struct Boxes(pub std::sync::Arc<Vec<(u16, i32, i32, Vec<Item>)>>);
+pub struct Boxes(pub std::sync::Arc<Vec<(u16, i32, i32, u32, u32, Vec<Item>)>>);
 
 impl PartialEq for Boxes {
     fn eq(&self, o: &Self) -> bool {
@@ -1098,23 +1190,26 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
     let setup = ctx.setup;
     let (tl, mm) = (setup.left(), MM / 100.0);
     for id in ids {
+        // a frame on the page is measured from the paper's top left (checked
+        // with 一太郎ビューア on a handout with A4 margins of 20 and 17 mm), and
+        // stays where it is whatever column anchors it
         let fixed = setup.fixed.contains(id);
-        let top = if fixed { setup.top() } else { top };
-        // a frame on the page stays where it is whatever column anchors it
-        let tl = if fixed { tl - ctx.dx } else { tl };
+        let top = if fixed { 0.0 } else { top };
+        let tl = if fixed { -ctx.dx } else { tl };
         if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
-            ctx.items().push(Item::Image {
-                id: *id,
-                x: tl + fx as f32 * mm,
-                y: top + fy as f32 * mm,
-                w: fw as f32 * mm,
-                h: fh as f32 * mm,
-            });
+            let (x, y, w, h) = (tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
+            ctx.items().push(Item::Image { id: *id, x, y, w, h });
+            if setup.wrap.contains(id) {
+                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h));
+            }
         }
-        if let Some((_, fx, fy, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
+        if let Some((_, fx, fy, fw, fh, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
             let (dx, dy) = (tl + *fx as f32 * mm, top + *fy as f32 * mm);
             for it in items {
                 ctx.items().push(it.moved(dx, dy));
+            }
+            if setup.wrap.contains(id) {
+                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + *fw as f32 * mm, dy + *fh as f32 * mm));
             }
         }
     }
@@ -1148,7 +1243,7 @@ impl Item {
 /// the box's own margins, the document's character size and faces, one
 /// character per cell and a line pitch of 1.5 characters (the box keeps as
 /// many whole lines as fit, at least one). Text past the box is cut off.
-pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32, i32, Vec<Item>)> {
+pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32, i32, u32, u32, Vec<Item>)> {
     let mut out = Vec::new();
     // the k-th text-box frame of /Frame shows the k-th box of /LayoutBoxText
     // (checked on a school handout: sizes and texts agree box by box)
@@ -1197,7 +1292,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             })
             .cloned()
             .collect();
-        out.push((f.id, f.x, f.y, items));
+        out.push((f.id, f.x, f.y, f.w, f.h, items));
     }
     out
 }
