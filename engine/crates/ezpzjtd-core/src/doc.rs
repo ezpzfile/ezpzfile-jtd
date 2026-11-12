@@ -1194,6 +1194,9 @@ fn build_blocks(
                 text,
                 ..
             } => match text::inline_kind(header) {
+                // a segment holding only control units (the 0002 that sits by a
+                // picture frame's anchor): nothing to show
+                InlineKind::Visible if !text.is_empty() && text.chars().all(|c| (c as u32) < 0x20) => {}
                 InlineKind::Visible => {
                     // keep inline text as its own run so ruby can attach
                     let st = b.style_at(*text_start);

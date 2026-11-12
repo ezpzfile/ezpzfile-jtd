@@ -6,7 +6,7 @@
 > word processor 一太郎 (Ichitaro), on any device. It aims to do for jtd what rhwp did for
 > Korea's hwp.
 
-Written 2026-10-01 · Status: v0.3. Reader, Ichitaro-style editor, saving back to `.jtd`
+Written 2026-10-01, updated 2026-11-12 · Status: v0.4.5. Reader, Ichitaro-style editor, saving back to `.jtd`, compressed files, pictures
 
 ---
 

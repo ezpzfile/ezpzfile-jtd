@@ -12,11 +12,35 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.3, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.4.5, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
-[![The JTD editor](docs/images/editor.png)](https://ezpzfile.com/jtd-editor)
+[![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
-<sub>A notice made in the latest Ichitaro, open in the browser editor.</sub>
+<sub>A made-up neighbourhood notice open in the browser editor (a document made with this engine).</sub>
+
+<table>
+<tr>
+<td width="50%"><a href="https://ezpzfile.com/jtd-editor"><img src="docs/images/pictures-en.png" alt="A document with pictures"></a></td>
+<td width="50%"><a href="https://ezpzfile.com/jtd-editor"><img src="docs/images/open-help-en.png" alt="Help when a file does not open"></a></td>
+</tr>
+<tr>
+<td><sub><b>Pictures (0.4.4)</b>: photos and illustrations in a document, where Ichitaro Viewer puts them (pictures swapped for this sample)</sub></td>
+<td><sub><b>When a file does not open (0.4.0)</b>: what the file is, why, and what you can do</sub></td>
+</tr>
+</table>
+
+### Recent releases
+
+| Version | What changed |
+|---|---|
+| 0.4.5 | No stray marks next to pictures; new screenshots |
+| 0.4.4 | Pictures (GIF, JPEG, PNG, BMP) drawn where they sit; also in PDF export |
+| 0.4.3 | `.jtdc` compressed documents in the open dialog; checked on 17 real files |
+| 0.4.2 | Choose Mincho or Gothic and save it to `.jtd` |
+| 0.4.1 | Documents with a page break just before a ruled box save as `.jtd` |
+| 0.4.0 | Compressed Ichitaro files (`.jttc`, `.jtdc`), help when a file does not open, Gothic text |
+
+Every change is in [Releases](https://github.com/ezpzfile/ezpzfile-jtd/releases).
 
 ## Use it in your browser (no install)
 
@@ -34,27 +58,37 @@ Using it somewhere? Let us know and we will add you here.
 
 ## What works
 
-Tested on 95 public Ichitaro files (Ichitaro 8 to 2018) published by Japanese ministries:
+Tested on public Ichitaro files published by Japanese ministries and others (Ichitaro 8 to the latest): a base set of 95 and a second set of 111 with pictures, vertical writing, large documents and more.
 
-- all 95 open; about 2 ms per file
+**Opening**
+
+- all 95 of the base set open; about 2 ms per file
 - body text: 99.9 % of the visible characters match what **Ichitaro Viewer itself** shows
   (87 of 94 files identical), checked automatically with JustSystems' free viewer
-- edited files **save back to `.jtd`**, and Ichitaro Viewer opens them (see below)
+- **compressed Ichitaro files** (`.jttc` templates, `.jtdc` documents): the document inside is unpacked and opened
+  (LHA `-lh5-`). All 17 real public files open, and `.jtdc` text matches Ichitaro Viewer at 99.2 %
+- large documents of around 100 pages (text stored in several pieces) open and save as `.jtd`
+- telling what a file is when it does not open (Word, PDF, RTF, text, …: `sniff::kind`, WASM `fileKind`);
+  the editor opens RTF or text saved under a `.jtd` name as a new document (text only)
+
+**Showing**
+
 - paragraphs, alignment, indents, line feed (改行幅)
 - ruled tables (merged cells, column widths, vertical and **horizontal rules**, rules between lines or through them, the 16 **line types**: thick, dotted, double and so on)
 - page setup: **paper size and orientation, margins, characters per line and lines per page**, base character size
 - font size, bold, italic, underline, colour, ruby (furigana), page breaks
+- typefaces: Mincho and Gothic (from the document's font table)
+- **pictures**: GIF, JPEG, PNG and BMP pictures drawn where they sit on the page (`/Frame` frames and anchors in the text, checked against Ichitaro Viewer)
 - document properties, including the **original file path** that Ichitaro leaves inside files
-- export: plain text, Markdown, HTML, JSON
 
-- typefaces: Mincho and Gothic (from the document's font table), also in Word export; the editor sets Mincho or Gothic and saves it to .jtd (adds ＭＳ ゴシック to the font table; 0.4.2, opens in Ichitaro Viewer)
-- **compressed Ichitaro documents (`.jttc` templates, `.jtdc` documents)**: the document inside is unpacked and opened (LHA `-lh5-`; 0.4.0). All 17 real public files (7 .jttc, 10 .jtdc) open, and .jtdc text matches Ichitaro Viewer at 99.2% (checked in 0.4.3)
-- telling what a file is when it does not open (Word, PDF, RTF, text, …: `sniff::kind`, WASM `fileKind`); the editor opens RTF or text saved under a .jtd name as a new document (text only)
+**Editing and saving**
 
-- **pictures**: GIF, JPEG, PNG and BMP pictures placed in a document are drawn where they sit on the page (`/Frame` frames and anchors in the text; 0.4.4, checked against Ichitaro Viewer), and stay when saving as .jtd
+- edited files **save back to `.jtd`**, and Ichitaro Viewer opens them (see below); pictures stay
+- choose Mincho or Gothic and save it to `.jtd` (adds ＭＳ ゴシック to the font table)
+- export: Word (`.docx`), PDF, HTML, plain text, Markdown, JSON
 
-Not yet: shapes and text boxes, pictures in Word export, vertical writing (the setting is read), headers and footers, columns (段組),
-Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
+**Not yet**: shapes and text boxes, pictures in Word export, vertical writing (the setting is read), headers and footers,
+columns (段組), Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 
 ## Editor
