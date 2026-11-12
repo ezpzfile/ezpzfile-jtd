@@ -588,7 +588,9 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
                 // (0x0f all four), +31 drop shadow, +35 lined, +39 filled
                 if s.tail.len() >= 40 {
                     let t = |k: usize| s.tail[k];
-                    let line = t(35) != 0 && t(25) != 0 && w > 0;
+                    // (width 0 is the thinnest line: the black frame of a
+                    // 学校だより's main text box in 一太郎ビューア)
+                    let line = t(35) != 0 && t(25) != 0;
                     if !line && fill.is_empty() {
                         return None;
                     }

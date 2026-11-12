@@ -44,6 +44,9 @@ fn lei(b: &[u8], o: usize) -> Option<i32> {
     Some(i32::from_le_bytes([*b.get(o)?, *b.get(o + 1)?, *b.get(o + 2)?, *b.get(o + 3)?]))
 }
 
+/// The thinnest line drawn, 1/40 mm.
+const HAIR: u16 = 6;
+
 /// Upper bounds against crafted files: commands per drawing, nesting.
 const MAX_CMDS: usize = 200_000;
 const MAX_DEPTH: usize = 16;
@@ -203,7 +206,9 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
         }
         0x600a => {
             let pat = lei(b, body + 4).unwrap_or(0);
-            let lw = le16(b, body + 8).unwrap_or(8).clamp(1, 400);
+            // a line thinner than 0.15 mm shows as a pixel in 一太郎ビューア
+            // (the 0.075 mm black frame of a 学校便り's 生活目標 bar)
+            let lw = le16(b, body + 8).unwrap_or(8).clamp(HAIR, 400);
             let (fill, line) = (bgr(b, body + 28), bgr(b, body + 32));
             let Some(first) = be16(b, body + 36) else { return };
             let mut offs = vec![first as usize];
@@ -218,20 +223,33 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
             // fill: 0 solid, 256 a gradient from the fill colour to the
             // second colour (then there is no line), others a pattern of dots
             // (a grey dotted ellipse behind a handout's title)
-            let line = if no_line { "none".to_string() } else { line };
-            let (fill, line) = match pat {
-                0 => (fill, line),
+            // `line` here (+40) is the pattern's colour; each outline gives
+            // its own line: u16 flags at +6 (0x8000 no line), u16 width
+            // (1/40 mm) at +8 and colour (00 BB GG RR) at +10. A 学校だより's
+            // holly and candy cane have black outlines in 一太郎ビューア while
+            // +40 holds a pale yellow
+            let pattern_colour = line;
+            let (fill, _) = match pat {
+                0 => (fill, "none".to_string()),
+                // 5: diagonal stripes of the pattern colour over the fill
+                // (a candy cane, pink on white)
+                5 => {
+                    out.ids += 1;
+                    let id = out.ids;
+                    let _ = write!(out.s, "<defs><pattern id=\"p{id}\" width=\"48\" height=\"48\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(45)\"><rect width=\"48\" height=\"48\" fill=\"{fill}\"/><rect width=\"24\" height=\"48\" fill=\"{pattern_colour}\"/></pattern></defs>");
+                    (format!("url(#p{id})"), "none".to_string())
+                }
                 256 => {
                     out.ids += 1;
                     let id = out.ids;
-                    let _ = write!(out.s, "<defs><linearGradient id=\"g{id}\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{fill}\"/><stop offset=\"1\" stop-color=\"{line}\"/></linearGradient></defs>");
+                    let _ = write!(out.s, "<defs><linearGradient id=\"g{id}\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{fill}\"/><stop offset=\"1\" stop-color=\"{pattern_colour}\"/></linearGradient></defs>");
                     (format!("url(#g{id})"), "none".to_string())
                 }
                 _ => {
                     out.ids += 1;
                     let id = out.ids;
                     let _ = write!(out.s, "<defs><pattern id=\"p{id}\" width=\"24\" height=\"24\" patternUnits=\"userSpaceOnUse\"><circle cx=\"6\" cy=\"6\" r=\"4.5\" fill=\"{fill}\"/><circle cx=\"18\" cy=\"18\" r=\"4.5\" fill=\"{fill}\"/></pattern></defs>");
-                    (format!("url(#p{id})"), line)
+                    (format!("url(#p{id})"), "none".to_string())
                 }
             };
             let op = "";
@@ -239,7 +257,14 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
                 if off + 10 > ln {
                     break;
                 }
-                let Some((d, e)) = outline(b, o + off + 2, end, out) else { continue };
+                let r0 = o + off;
+                let line = match be16(b, r0 + 6) {
+                    _ if no_line => "none".to_string(),
+                    Some(f) if f & 0x8000 == 0 && pat != 256 => bgr(b, r0 + 10),
+                    _ => "none".to_string(),
+                };
+                let lw = be16(b, r0 + 8).filter(|&w| w > 0 && w <= 400).unwrap_or(lw).max(HAIR);
+                let Some((d, e)) = outline(b, r0 + 2, end, out) else { continue };
                 match e {
                     None => {
                         let _ = write!(out.s, "<path d=\"{d}\" fill=\"{fill}\"{op} stroke=\"{line}\" stroke-width=\"{lw}\" stroke-linejoin=\"round\" fill-rule=\"evenodd\"/>");
@@ -256,7 +281,7 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
                 return;
             }
             if let Some((d, e)) = outline(b, o + 2, end, out) {
-                let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(1, 400), bgr(b, o + 10));
+                let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(HAIR, 400), bgr(b, o + 10));
                 let _ = write!(out.s, "<path d=\"{}\" fill=\"none\" stroke=\"{line}\" stroke-width=\"{lw}\" stroke-linejoin=\"round\"/>", e.unwrap_or(d));
             }
         }
@@ -266,7 +291,7 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
             if no_line {
                 return;
             }
-            let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(1, 400), bgr(b, o + 10));
+            let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(HAIR, 400), bgr(b, o + 10));
             let (n, at) = if ty & 0xff == 0x01 { (2usize, o + 16) } else { (bei(b, o + 14).unwrap_or(0).clamp(0, 100_000) as usize, o + 18) };
             if n >= 2 && at + 8 * n <= end {
                 out.cmds += n;

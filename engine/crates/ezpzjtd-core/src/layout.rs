@@ -1031,7 +1031,12 @@ fn layout_para(
         // pictures anchored in this paragraph: from the text area's left and this line's top
         // 縦組み: a frame anchored on a character goes with that
         // character's line, measured from its place down the line
-        let on_char = |f: &u16| setup.vertical && !setup.fixed.contains(f) && !setup.on_text.contains(f);
+        // 横組み: one anchored past the paragraph's first character goes
+        // with the line that holds it, measured from the text area's left
+        // (a 学校だより's book picture, anchored at the 124th character of
+        // a box's paragraph, sits by its fifth line in 一太郎ビューア)
+        let at_of = |f: u16| p.frame_at.iter().find(|a| a.0 == f).map_or(0, |a| a.1);
+        let on_char = |f: &u16| !setup.fixed.contains(f) && !setup.on_text.contains(f) && (setup.vertical || at_of(*f) > 0);
         if li == 0 && !p.frames.is_empty() && !frames_done {
             let rest: Vec<u16> = if wrapping { p.frames.iter().copied().filter(|f| !setup.fixed.contains(f)).collect() } else { p.frames.clone() };
             let rest: Vec<u16> = rest.into_iter().filter(|f| !on_char(f)).collect();
@@ -1069,13 +1074,17 @@ fn layout_para(
         let end = model_pos;
         xs.push(after);
         let is_last = li + 1 == nlines;
-        if setup.vertical && !p.frames.is_empty() {
+        if !p.frames.is_empty() {
             for &f in p.frames.iter().filter(|f| on_char(f)) {
-                let at = p.frame_at.iter().find(|a| a.0 == f).map_or(0, |a| a.1);
+                let at = at_of(f);
                 if (at >= start && at < end) || (li == 0 && at < start) || (is_last && at >= end) {
-                    let k = line.iter().position(|g| g.off == Some(at));
-                    let ax = k.map_or(x0, |k| gx[k]);
-                    push_frames_at(ctx, &[f], top, Some(ax), false);
+                    if setup.vertical {
+                        let k = line.iter().position(|g| g.off == Some(at));
+                        let ax = k.map_or(x0, |k| gx[k]);
+                        push_frames_at(ctx, &[f], top, Some(ax), false);
+                    } else {
+                        push_frames(ctx, &[f], top);
+                    }
                 }
             }
         }
@@ -1989,15 +1998,20 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 // (a box a hair short of its 字数 squeezes the characters:
                 // ten 48 pt characters in a 卒業証書's box 9.98 of them long)
                 let line = (c * big).min(inner_w);
-                (c.ceil() as u32, (inner_w - line).max(0.0) / 2.0 / MM, Some((line / c).min(font)))
+                // (a hair over, so that 17 characters of 12 pt do fill a line
+                // of 17: a 学校便り's 生活目標 bar)
+                (c.ceil() as u32, ((inner_w - line) / 2.0 - 0.25).max(0.0) / MM, Some((line / c).min(font)))
             }
             _ => (fit, 0.0, None),
         };
         let sub = PageSetup {
             width_mm: width,
             height_mm: height,
+            // (the line may still run on to the box's own margin: 「一月の
+            // 生活目標「礼儀正しくしよう」」, 12 pt with a 14 pt bracket, is one
+            // line in a bar whose 字数 is 17 in 一太郎ビューア)
             margin_left_mm: pl + side,
-            margin_right_mm: width - bw + pr + side,
+            margin_right_mm: width - bw + pr,
             margin_top_mm: pt,
             margin_bottom_mm: height - pt - pitch * n as f32 / MM,
             chars_per_line: chars,

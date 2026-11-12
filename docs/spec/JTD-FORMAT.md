@@ -614,6 +614,21 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.13** Measured against 一太郎ビューア. **observed**
+  - A frame anchored past a paragraph's first character (`0000` anchor
+    record after some text) is measured from the line that holds that
+    character, across from the text area's left (a 学校だより's book
+    picture by the fifth line of its box).
+  - A `600a` shape's +40 colour is its pattern's colour, not its line. Each
+    outline record has u16 flags at +6 (0x8000: no line), u16 line width
+    (1/40 mm) at +8 and the line colour (`00 BB GG RR`) at +10. Pattern 5
+    is diagonal stripes of the pattern colour over the fill. Lines thinner
+    than 0.15 mm show as about a pixel.
+  - `/LayoutBox` `0401` switches with width 0 and +35 set draw the
+    thinnest line. +29 is the line type (1 single, 3 double).
+  - A text box line may run on past its 字数 to the box's own margin; 字数
+    only sets where the lines start.
+
 - **0.5.12** Found by changing single bytes and opening the files in
   一太郎ビューア, and by measuring its pages. **observed**
   - Figure records: the count word's top bit (0x8000) means no line.
