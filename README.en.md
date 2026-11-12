@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.5.11, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.5.12, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.5.11, reader + editor that saves back to `.jtd` (developer preview)
 
 | Version | What changed |
 |---|---|
+| 0.5.12 | Ruled-line colours, cell shading and cell alignment, 均等割付, text box lines (shadow, rounded, dotted) with their line gap and 字数, figures without a line, texture figures (wood grain), pictures anchored in table rows, and empty lines moved by text boxes, as in Ichitaro Viewer. Text is drawn above figures |
 | 0.5.11 | Headers, footers (柱) and page numbers are shown, with the place, alignment and distance from the paper edge of Ichitaro Viewer. Small bitmaps keep their dots when enlarged |
 | 0.5.10 | Figures are matched to their frames in order (figures whose size did not agree went missing or into the wrong frame). A curve is measured by the curve itself |
 | 0.5.9 | Figure polygons (63xx), straight and open lines are drawn, so the flowers, carp streamers and people of school newsletters appear. Page backgrounds (colour or picture) are shown. Text box lines, rounded corners and stacking order follow Ichitaro Viewer. A box over the whole page keeps the text inside it. Spacing of large characters fixed |

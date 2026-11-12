@@ -112,6 +112,7 @@ fn insert_str(p: &mut Paragraph, off: usize, text: &str, style: &CharStyle) {
             style: style.clone(),
             ruby: None,
             inline: false,
+            fit: None,
         },
     );
     normalize(p);
@@ -366,6 +367,7 @@ impl Editor {
         setup.z_order = doc.frames.iter().map(|f| f.id).collect();
         setup.on_text = doc.frames.iter().filter(|f| f.on_text && !f.fixed).map(|f| f.id).collect();
         setup.wrap = doc.frames.iter().filter(|f| f.wrap && f.kind != 4).map(|f| f.id).collect();
+        setup.wrap_blank = doc.frames.iter().filter(|f| f.wrap_blank && f.kind == 2).map(|f| f.id).collect();
         setup.boxes = crate::layout::Boxes(std::sync::Arc::new(crate::layout::box_items(&doc, &setup)));
         Editor {
             doc,
@@ -1005,6 +1007,8 @@ impl Editor {
                 left: x + 2,
                 right: x + 2 + w,
                 paragraphs: vec![Paragraph::default()],
+                shade: None,
+                align: None,
                 src: Default::default(),
             });
             rules.push(Rule {
@@ -1065,6 +1069,8 @@ impl Editor {
                 left: 0,
                 right: width,
                 paragraphs: vec![Paragraph::default()],
+                shade: None,
+                align: None,
                 src: Default::default(),
             }],
             x0: 0,

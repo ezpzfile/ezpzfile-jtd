@@ -614,6 +614,43 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.12** Found by changing single bytes and opening the files in
+  一太郎ビューア, and by measuring its pages. **observed**
+  - Figure records: the count word's top bit (0x8000) means no line.
+    `600f` is a picture filling its box (テクスチャ): bbox (4 × i32) at +6,
+    u32 offset and u32 length in `FDMBitmap` at +26 and +30. A picture
+    there has u16 width, height, row bytes and bits per pixel (24: R G B,
+    rows from the top) at +16 and the u32 offset of its pixels at +28; it
+    is tiled (a 学校便り's wood-grain title board).
+  - `/LayoutBox` `0401` bytes 44-83 are switches: +21 fill type, +23
+    dotted, +24 rounded, +25 sides (0x0f all), +31 shadow, +35 line, +39
+    filled. A box with a shadow is its frame less the shadow offset.
+    `6009`: mask ff, then (u8 01, u16) four times: the gap between lines
+    (1/100 mm), two zeros, the characters per line in half-width
+    characters (字数); a line holds 字数 characters at their own size, set
+    in the middle of the box. Honoured when the record ends in u32 4 or
+    1500; boxes whose record ends in 8 fill their width at 1.25-character
+    lines.
+  - Ruled lines: style properties on the rule's unit words give the
+    colours (first word: 15 vertical upper half, 16 lower half, 17 middle
+    line, 20 under line; third word: 17 / 20 the line to the next item,
+    15 / 16 the b vertical). Values over 0xffffff are automatic.
+  - Cells: the cell record's unit carries shading (property 16 colour,
+    12 per cent, with property 20 bit 31), drawn as white blended to that
+    per cent. The cell record's fourth word is the cell's alignment (0
+    left, 1 centre, 2 right, 3 spread; 0xff none) over the paragraphs'.
+    Text runs from the cell's left unit to its right unit (a cell of 68
+    units holds 17 characters).
+  - Line header TLV 0x24 value 3 is 均等割付; a `0000` record `0, 7,
+    width, 020d, 0` before an inline segment spreads it over width/120
+    inch.
+  - `/Frame` word [25]: 0x80, 0x100 or 0x200 without 4 make the text go
+    round the frame; text boxes with 0x80 alone move empty lines down a
+    line at a time where they leave less than a character of room (2 mm
+    under a box counts). Frames anchored in a ruled line are measured from
+    that line whatever word [5] says.
+  - All text is drawn over all pictures and figures, box text included.
+
 - **0.5.11** Headers and footers (柱), found by changing single bytes
   and opening the file in 一太郎ビューア: `/DocumentViewStyles` records
   `3k04`-`3k07` describe place k (1-9). `3k06`: u8 03, a group mask with

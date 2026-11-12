@@ -889,6 +889,7 @@ fn tlv_align(payload: &[u16]) -> Align {
                 0 => Align::Left,
                 1 => Align::Center,
                 2 => Align::Right,
+                3 => Align::Distribute,
                 _ => Align::Other,
             };
         }
@@ -961,6 +962,7 @@ fn set_align(payload: &[u16], align: Align) -> Vec<u16> {
         Align::Left => 0,
         Align::Center => 1,
         Align::Right => 2,
+        Align::Distribute => 3,
         Align::Other => return payload.to_vec(),
     };
     let mut out = vec![payload.first().copied().unwrap_or(0)];

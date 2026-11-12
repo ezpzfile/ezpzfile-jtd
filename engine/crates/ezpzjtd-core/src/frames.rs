@@ -41,13 +41,21 @@ pub struct Frame {
     /// anchoring character (a 縦組み 学校だより's title scroll).
     #[serde(default)]
     pub on_text: bool,
-    /// Word [25] has 0x100 or 0x200 and not 4: the text goes round the
-    /// frame (回り込み): photos 0x300. With 4 (a picture behind a card's
-    /// text, 0x304 or 4) the text runs under it. Text boxes (0xb80) do not
-    /// push the text: a handout's lines land where 一太郎ビューア puts them
-    /// (199 mm) only when they are left in place.
+    /// Word [25] has 0x80, 0x100 or 0x200 and not 4: the text goes round
+    /// the frame (回り込み): photos 0x300, text boxes 0xb80, 0x180 and 0x80
+    /// (a 学校だより's boxes, whose empty lines 一太郎ビューア moves down
+    /// where the boxes leave no room). With 4 (a picture behind a card's
+    /// text, 0x304 or 4) the text runs under it. Text boxes do not push the
+    /// text: a handout's lines land where 一太郎ビューア puts them (199 mm)
+    /// only when they are left in place.
     #[serde(default)]
     pub wrap: bool,
+    /// Word [25] 0x80 without 0x100: empty lines go round it too (a
+    /// 学校だより's boxes, 0x80: four empty lines beside its 生活目標 boxes
+    /// move down; a 学校だより with 0x180 boxes and a handout with 0xb80
+    /// ones keep their empty lines in place in 一太郎ビューア).
+    #[serde(default)]
+    pub wrap_blank: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -95,7 +103,8 @@ pub fn read_frames(cfb: &Cfb, base: &str) -> Vec<Frame> {
                 h: be32(r, 38).unwrap_or(0),
                 fixed: w(6) == 2,
                 on_text: w(5) == 1,
-                wrap: w(25) & 0x300 != 0 && w(25) & 4 == 0,
+                wrap: w(25) & 0x380 != 0 && w(25) & 4 == 0,
+                wrap_blank: w(25) & 0x384 == 0x80,
             });
         }
         o += 4 + l;
@@ -202,68 +211,96 @@ pub fn read_pictures_with(cfb: &Cfb, frames: &[Frame], max_bytes: usize, box_anc
         for p in paths {
             let layout = p.split("layout_data ").nth(1).and_then(|r| r.split('/').next()).and_then(|n| n.trim().parse::<u32>().ok());
             if let Some(b) = cfb.read(p) {
-                figs.extend(crate::figure::figures(&b).into_iter().map(|f| Some((f, layout))));
+                let bm = cfb.read(&p.replace("/FDMVector", "/FDMBitmap")).unwrap_or_default();
+                figs.extend(crate::figure::figures_with(&b, &bm).into_iter().map(|f| Some((f, layout))));
             }
         }
         let near = |a: u32, b: u32| a.abs_diff(b) <= 20.max(a / 50);
-        // in item order, when the counts agree: the main figures for the
-        // frames not anchored in a box, each box's for its own
-        let mut done: Vec<u16> = Vec::new();
-        let mut by_order = |want: Option<u32>, fr: Vec<&Frame>, figs: &mut Vec<Option<(crate::figure::Figure, Option<u32>)>>, out: &mut Vec<Picture>, total: &mut usize| {
+        // Each scope keeps its own figures: frames anchored in a text box show
+        // that box's layout_data, the others main_data.
+        let mut k4: Vec<&Frame> = frames.iter().filter(|f| f.kind == 4).collect();
+        k4.sort_by_key(|f| (f.item, f.id));
+        let anchored: Vec<u16> = box_anchors.iter().flat_map(|(_, ids)| ids.iter().copied()).collect();
+        let mut scopes: Vec<(Option<u32>, Vec<&Frame>)> = box_anchors
+            .iter()
+            .map(|(layout, ids)| (Some(*layout), k4.iter().copied().filter(|f| ids.contains(&f.id)).collect()))
+            .collect();
+        scopes.push((None, k4.iter().copied().filter(|f| !anchored.contains(&f.id)).collect()));
+        // A box's frames whose figures are not in its layout_data look in main_data too
+        let mut stray: Vec<&Frame> = Vec::new();
+        for (want, fr) in scopes {
             let idx: Vec<usize> = figs.iter().enumerate().filter(|(_, g)| g.as_ref().is_some_and(|(_, l)| *l == want)).map(|(i, _)| i).collect();
-            if idx.len() != fr.len() || fr.is_empty() {
-                return;
+            let fr: Vec<&Frame> = if want.is_none() { fr.into_iter().chain(stray.drain(..)).collect() } else { fr };
+            if idx.is_empty() {
+                stray.extend(fr);
+                continue;
             }
-            for (f, i) in fr.into_iter().zip(idx) {
-                let (g, layout) = figs[i].take().unwrap();
-                // the outline of the shape before it: drawn in that shape's box
-                let svg = match g.alt {
-                    Some((w, h, svg)) if near(w, f.w) && near(h, f.h) && !(near(g.w, f.w) && near(g.h, f.h)) => svg,
-                    _ => g.svg,
+            let picked = match_figures(&fr, &idx, &figs, near);
+            for (k, f) in fr.iter().enumerate() {
+                let Some((i, use_alt)) = picked[k] else {
+                    if want.is_some() {
+                        stray.push(f);
+                    }
+                    continue;
                 };
-                *total += svg.len();
-                if *total > max_bytes {
-                    return;
+                let (g, layout) = figs[i].take().unwrap();
+                let svg = if use_alt { g.alt.map(|a| a.2).unwrap_or(g.svg) } else { g.svg };
+                total += svg.len();
+                if total > max_bytes {
+                    return out;
                 }
                 out.push(Picture { item: f.id, mime: "image/svg+xml", data: svg.into_bytes(), layout });
-                done.push(f.id);
             }
-        };
-        let mut k4: Vec<&Frame> = frames.iter().filter(|f| f.kind == 4).collect();
-        k4.sort_by_key(|f| f.item);
-        for (layout, ids) in box_anchors {
-            let fr: Vec<&Frame> = k4.iter().copied().filter(|f| ids.contains(&f.id)).collect();
-            by_order(Some(*layout), fr, &mut figs, &mut out, &mut total);
         }
-        let anchored: Vec<u16> = box_anchors.iter().flat_map(|(_, ids)| ids.iter().copied()).collect();
-        let main: Vec<&Frame> = k4.iter().copied().filter(|f| !anchored.contains(&f.id)).collect();
-        if !box_anchors.is_empty() || main.len() == figs.iter().filter(|g| g.as_ref().is_some_and(|(_, l)| l.is_none())).count() {
-            by_order(None, main, &mut figs, &mut out, &mut total);
+    }
+    out
+}
+
+/// Which figure each frame shows. The figures are stored in nearly the order
+/// of the frames, but not quite (a box's own figures can come last), so a
+/// frame first takes the next figure of its size, counting on from the one
+/// the frame before took; a frame whose size no figure has (a group drawn
+/// smaller than its frame) takes the figure lying between its neighbours'.
+/// `(figure index, use the outline of the shape before)`.
+fn match_figures(fr: &[&Frame], idx: &[usize], figs: &[Option<(crate::figure::Figure, Option<u32>)>], near: impl Fn(u32, u32) -> bool) -> Vec<Option<(usize, bool)>> {
+    let n = idx.len();
+    let mut used = vec![false; n];
+    let mut out: Vec<Option<(usize, bool)>> = vec![None; fr.len()];
+    let fits = |j: usize, f: &Frame| -> Option<bool> {
+        let (g, _) = figs[idx[j]].as_ref()?;
+        if near(g.w, f.w) && near(g.h, f.h) {
+            Some(false)
+        } else if g.alt.as_ref().is_some_and(|a| near(a.0, f.w) && near(a.1, f.h)) {
+            Some(true)
+        } else {
+            None
         }
-        // first by the figure's own size, then frames left over by the size
-        // of the shape a bare outline lies on
-        let mut left = Vec::new();
-        for f in frames.iter().filter(|f| f.kind == 4 && !done.contains(&f.id)) {
-            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|(g, _)| near(g.w, f.w) && near(g.h, f.h))) else {
-                left.push(f);
-                continue;
-            };
-            let (g, layout) = slot.take().unwrap();
-            total += g.svg.len();
-            if total > max_bytes {
-                break;
-            }
-            out.push(Picture { item: f.id, mime: "image/svg+xml", data: g.svg.into_bytes(), layout });
+    };
+    let mut cursor = 0usize;
+    let mut pos: Vec<Option<usize>> = vec![None; fr.len()];
+    for (k, f) in fr.iter().enumerate() {
+        let hit = (0..n).map(|d| (cursor + d) % n).find(|&j| !used[j] && fits(j, f).is_some());
+        if let Some(j) = hit {
+            used[j] = true;
+            out[k] = Some((idx[j], fits(j, f).unwrap()));
+            pos[k] = Some(j);
+            cursor = j + 1;
         }
-        for f in left {
-            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|(g, _)| g.alt.as_ref().is_some_and(|a| near(a.0, f.w) && near(a.1, f.h)))) else { continue };
-            let (g, layout) = slot.take().unwrap();
-            let svg = g.alt.map(|a| a.2).unwrap_or(g.svg);
-            total += svg.len();
-            if total > max_bytes {
-                break;
-            }
-            out.push(Picture { item: f.id, mime: "image/svg+xml", data: svg.into_bytes(), layout });
+    }
+    // the rest: between the neighbours' figures, in order
+    for k in 0..fr.len() {
+        if pos[k].is_some() {
+            continue;
+        }
+        let lo = (0..k).rev().find_map(|i| pos[i]).map(|j| j + 1).unwrap_or(0);
+        let hi = (k + 1..fr.len()).find_map(|i| pos[i]).unwrap_or(n);
+        if lo >= hi {
+            continue;
+        }
+        if let Some(j) = (lo..hi).find(|&j| !used[j]) {
+            used[j] = true;
+            out[k] = Some((idx[j], false));
+            pos[k] = Some(j);
         }
     }
     out
@@ -350,6 +387,10 @@ pub struct TextBox {
     pub vertical: bool,
     /// The box's character size in pt (`6004`), when given.
     pub size_pt: Option<f32>,
+    /// `6009`: the gap between lines (行間, 1/100 mm) and the characters
+    /// per line in half-width characters (字数), when given.
+    pub line_gap: Option<u16>,
+    pub half_chars: Option<u16>,
 }
 
 /// A text box's frame line (`/LayoutBox` records `6007` and `0401`).
@@ -377,6 +418,8 @@ struct BoxStyle {
     vertical: bool,
     size: Option<u32>,
     line: Option<u16>,
+    gap: Option<u16>,
+    half_chars: Option<u16>,
     /// `6007` bit 0 (u8) present: such boxes show their line only when
     /// filled (a 縦組み 学校だより: labels yes, its title and stars no)
     line_u8: bool,
@@ -385,6 +428,8 @@ struct BoxStyle {
     kind: u32,
     /// radius, width, line colour, shadow x, shadow y, shadow colour
     shape: Option<(u32, u32, String, u32, u32, String)>,
+    /// `0401` bytes 44-83: switches (see `read_boxes`)
+    tail: Vec<u8>,
     fill_type: u32,
     fill_color: String,
     stops: Vec<(f32, String)>,
@@ -436,6 +481,22 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                         let v = u32::from_be_bytes([b[q + 7], b[q + 8], b[q + 9], b[q + 10]]);
                         st.size = Some(v).filter(|v| (100..=10000).contains(v));
                     }
+                    // 6009: mask ff, then (u8 01, u16) four times: the line
+                    // gap (行間, 1/100 mm), two zeros, the characters per line
+                    // in half-width characters (字数: 62 on a 学校だより's box
+                    // of 31 characters whose lines are 5.5 mm apart for a gap
+                    // of 179 in 一太郎ビューア)
+                    // (honoured when the record ends in u32 4 or 1500; boxes
+                    // whose record ends in 8 — a 遠足 handout, a 学習発表会
+                    // sheet, 玉東中便り — fill their width at 1.25-character
+                    // lines whatever these say)
+                    let tail = (l >= 4 && q + 4 + l <= end).then(|| u32::from_be_bytes([b[q + l], b[q + l + 1], b[q + l + 2], b[q + l + 3]]));
+                    if t == 0x6009 && l >= 13 && q + 17 <= end && b[q + 4] == 0xff && b[q + 5] == 1 && tail != Some(8) {
+                        st.gap = Some(u16::from_be_bytes([b[q + 6], b[q + 7]])).filter(|&g| g <= 3000);
+                        if b[q + 14] == 1 {
+                            st.half_chars = Some(u16::from_be_bytes([b[q + 15], b[q + 16]])).filter(|&h| (2..=1000).contains(&h));
+                        }
+                    }
                     // 6007: u8 flags, (bit 0) u8, (bit 1) u16 line type (1-8
                     // seen on boxes with a line)
                     if t == 0x6007 && l >= 3 && q + 4 + l <= end {
@@ -464,6 +525,9 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                 {
                     st.shape = Some((r, w, col(c), sx, sy, col(sc)));
                     st.kind = be32(o + 4).unwrap_or(0);
+                    if len >= 84 {
+                        st.tail = b[o + 4 + 44..o + 4 + 84].to_vec();
+                    }
                 }
             }
             // 0403: u32 fill type (0 none, 1 one colour, 2 gradient), colour
@@ -509,24 +573,45 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
             vertical: styles.get(i).is_some_and(|s| s.vertical),
             // to the nearest half point (3.69 mm is 10.5 pt)
             size_pt: styles.get(i).and_then(|s| s.size).map(|v| (v as f32 / 100.0 * 72.0 / 25.4 * 2.0).round() / 2.0),
+            line_gap: styles.get(i).and_then(|s| s.gap),
+            half_chars: styles.get(i).and_then(|s| s.half_chars),
             border: styles.get(i).and_then(|s| {
-                // line types seen against 一太郎ビューア: 1-4 dotted, 5 and 8
-                // solid, 6 none (an empty box round a picture), larger none;
-                // 4, 5 and 8 carry a shadow
                 let fill: Vec<(f32, String)> = match s.fill_type {
                     1 => vec![(0.0, s.fill_color.clone())],
                     2 if !s.stops.is_empty() => s.stops.clone(),
                     _ => Vec::new(),
                 };
-                // (18 and 20: the dotted green and teal areas of a 学校だより)
+                let (r, w, color, sx, sy, sc) = s.shape.clone()?;
+                // `0401` bytes 44-83 are the box's switches (read across six
+                // handouts against 一太郎ビューア): +23 dotted, +24 rounded
+                // corners (radius = the third u32), +25 the sides lined
+                // (0x0f all four), +31 drop shadow, +35 lined, +39 filled
+                if s.tail.len() >= 40 {
+                    let t = |k: usize| s.tail[k];
+                    let line = t(35) != 0 && t(25) != 0 && w > 0;
+                    if !line && fill.is_empty() {
+                        return None;
+                    }
+                    let shadow = (t(31) != 0).then(|| ((sx as f32 / 100.0).clamp(0.0, 5.0), (sy as f32 / 100.0).clamp(0.0, 5.0), sc));
+                    return Some(Border {
+                        color,
+                        width_mm: (w as f32 / 100.0).clamp(0.1, 2.0),
+                        radius_mm: if t(24) != 0 { (r as f32 / 100.0).clamp(0.0, 30.0) } else { 0.0 },
+                        dotted: line && t(23) != 0,
+                        line,
+                        fill,
+                        angle: s.angle,
+                        shadow,
+                    });
+                }
+                // older files without the switches: line types seen against
+                // 一太郎ビューア: 1-4 dotted, 5 and 8 solid, 6 none, larger none;
+                // 4, 5 and 8 carry a shadow
                 let line = s.line.filter(|&l| matches!(l, 1..=5 | 8 | 18 | 20));
-                // a box of kind 1500 (a 卒業証書's, a 学校だより's title) or
-                // with the bit-0 byte shows its line only when it is filled
                 let line = line.filter(|_| !fill.is_empty() || (!s.line_u8 && s.kind != 1500));
                 if line.is_none() && fill.is_empty() {
                     return None;
                 }
-                let (r, w, color, sx, sy, sc) = s.shape.clone()?;
                 let shadow = line.filter(|l| matches!(l, 4 | 5 | 8)).map(|_| ((sx as f32 / 100.0).clamp(0.0, 5.0), (sy as f32 / 100.0).clamp(0.0, 5.0), sc));
                 Some(Border {
                     color,

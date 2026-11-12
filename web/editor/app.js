@@ -375,23 +375,33 @@ function dropPictures() {
 function isBackground(it, data) {
   return (it.t === "Image" && it.id === 0xfffe) || (it.t === "Rect" && it.noline && it.x === 0 && it.y === 0 && it.w >= data.w - 1 && it.h >= data.h - 1);
 }
-function paintItems(g, data, marks) {
+// part: "gfx" pictures, figures and box frames; "text" the text and lines.
+// All the text is drawn after all the pictures: 一太郎ビューア keeps a text
+// box's text above a figure stacked over the box (a school handout's
+// title scroll laid over a text box, probed by moving the scroll).
+function paintItems(g, data, marks, part) {
   const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
+  if (!part) {
+    paintItems(g, data, marks, "gfx");
+    paintItems(g, data, marks, "text");
+    return;
+  }
   if (data.vertical) {
     // the background first (it is kept on the paper as it is)
     const flat = data.flat || [];
     const bg = flat.filter((it) => isBackground(it, data));
-    if (bg.length) paintItems(g, { w: data.w, h: data.h, items: bg }, false);
+    if (bg.length && part === "gfx") paintItems(g, { w: data.w, h: data.h, items: bg }, false, "gfx");
     data = { ...data, flat: flat.filter((it) => !isBackground(it, data)) };
     // turn the layout back: layout x runs down the page, layout y from the right edge
     g.save();
     g.transform(0, 1, -1, 0, data.w, 0);
-    paintItems(g, { ...data, vertical: false, upright: true }, marks);
+    paintItems(g, { ...data, vertical: false, upright: true }, marks, part);
     g.restore();
     // a box writing across on a 縦組み page: drawn on the paper as it is
-    if (data.flat && data.flat.length) paintItems(g, { w: data.w, h: data.h, items: data.flat }, false);
+    if (data.flat && data.flat.length) paintItems(g, { w: data.w, h: data.h, items: data.flat }, false, part);
     return;
   }
+  if (part === "text") return paintText(g, data, marks);
   if (marks) {
     // text-area corner marks (like most Japanese word processors)
     const mm = 72 / 25.4, A = textArea(setup);
@@ -410,7 +420,7 @@ function paintItems(g, data, marks) {
   // pictures, box frames and 縦書き boxes in their stacking order (the
   // frame's place in /Frame: later on top), under the text
   const zOf = (it) => it.z || 0;
-  const layered = data.items.filter((it) => it.t === "Image" || it.t === "Turned" || (it.t === "Rect" && !isBackground(it, data)));
+  const layered = data.items.filter((it) => it.t === "Image" || it.t === "Turned" || (it.t === "Rect" && !it.cell && !isBackground(it, data)));
   layered.sort((a, b) => zOf(a) - zOf(b));
   for (const it of layered) {
     if (it.t === "Image") {
@@ -428,7 +438,7 @@ function paintItems(g, data, marks) {
     if (it.t === "Turned") {
       // 縦書き text boxes on a page written across: turned a quarter turn
       g.save(); g.translate(it.x, it.y); g.transform(0, 1, -1, 0, it.w, 0);
-      paintItems(g, { w: it.h, h: it.w, items: it.items, upright: true }, false);
+      paintItems(g, { w: it.h, h: it.w, items: it.items, upright: true }, false, "gfx");
       g.restore();
       continue;
     }
@@ -463,9 +473,20 @@ function paintItems(g, data, marks) {
     }
     g.restore();
   }
+}
+
+function paintText(g, data, marks) {
+  // table cell shading belongs to the text: over the boxes, under the characters
+  for (const it of data.items) {
+    if (it.t === "Rect" && it.cell && it.fill && it.fill.length) { g.fillStyle = it.fill[0][1]; g.fillRect(it.x, it.y, it.w, it.h); }
+  }
   g.textBaseline = "alphabetic";
   for (const it of data.items) {
-    if (it.t === "Text") {
+    if (it.t === "Turned") {
+      g.save(); g.translate(it.x, it.y); g.transform(0, 1, -1, 0, it.w, 0);
+      paintItems(g, { w: it.h, h: it.w, items: it.items, upright: true }, false, "text");
+      g.restore();
+    } else if (it.t === "Text") {
       g.font = `${it.i ? "italic " : ""}${it.b ? "bold " : ""}${it.size}px ${FACE_STACKS[it.f || (it.g ? 1 : 0)] || FONT_STACK}`;
       if (WEB_FACES[it.f]) wantFace(it.f, it.s);
       g.fillStyle = it.color || "#111";
@@ -779,7 +800,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.11")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.12")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */

@@ -59,13 +59,15 @@ pub struct Figure {
     pub alt: Option<(u32, u32, String)>,
 }
 
-struct Out {
+struct Out<'a> {
     s: String,
     cmds: usize,
     ids: usize,
+    /// `FDMBitmap` of the same data (textures of `600f` figures)
+    bm: &'a [u8],
 }
 
-impl Out {
+impl Out<'_> {
     fn full(&self) -> bool {
         self.cmds > MAX_CMDS || self.s.len() > 8_000_000
     }
@@ -161,9 +163,35 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
     if ln < 8 || o + ln > b.len() {
         return;
     }
+    // the count word's top bit: the line is not drawn (線なし). A text
+    // box's own outline (a black rectangle the size of the box) carries it;
+    // 一太郎ビューア draws it once the bit is cleared
+    let no_line = n & 0x8000 != 0;
+    let n = n & 0x7fff;
     let end = o + ln;
     let body = o + 8;
     match ty {
+        // a picture filling the box (テクスチャ): bbox (4 × i32) at +6, then
+        // u32 offset and u32 length of the picture in FDMBitmap at +26 and
+        // +30 (the wood-grain title board of a 学校便り)
+        0x600f => {
+            let (Some(x1), Some(y1), Some(x2), Some(y2)) = (bei(b, o + 6), bei(b, o + 10), bei(b, o + 14), bei(b, o + 18)) else { return };
+            let (Some(at), Some(len)) = (bei(b, o + 26), bei(b, o + 30)) else { return };
+            let Some(pic) = (at as usize).checked_add(len as usize).and_then(|e| out.bm.get(at as usize..e)) else { return };
+            let Some((pw, ph, png)) = texture_png(pic) else { return };
+            out.ids += 1;
+            let id = out.ids;
+            // tiled at 96 dpi: a pixel is 25.4 / 96 mm, 1/40 mm units here
+            let (tw, th) = (pw as f64 * 10.583, ph as f64 * 10.583);
+            let _ = write!(
+                out.s,
+                "<defs><pattern id=\"t{id}\" patternUnits=\"userSpaceOnUse\" x=\"{x1}\" y=\"{y1}\" width=\"{tw:.1}\" height=\"{th:.1}\"><image width=\"{tw:.1}\" height=\"{th:.1}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{}\"/></pattern></defs><rect x=\"{x1}\" y=\"{y1}\" width=\"{}\" height=\"{}\" fill=\"url(#t{id})\"/>",
+                base64(&png),
+                (x2 as i64 - x1 as i64).max(1),
+                (y2 as i64 - y1 as i64).max(1)
+            );
+            out.cmds += 1;
+        }
         0x600b => {
             for k in 0..n as usize {
                 let Some(c) = be16(b, body + 44 + 2 * k) else { break };
@@ -190,6 +218,7 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
             // fill: 0 solid, 256 a gradient from the fill colour to the
             // second colour (then there is no line), others a pattern of dots
             // (a grey dotted ellipse behind a handout's title)
+            let line = if no_line { "none".to_string() } else { line };
             let (fill, line) = match pat {
                 0 => (fill, line),
                 256 => {
@@ -223,6 +252,9 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
         }
         // a line on its own: u16 width at +8, colour (00 BB GG RR) at +10
         0x6004 | 0x6006 | 0x6009 | 0x6304 | 0x6306 | 0x6309 => {
+            if no_line {
+                return;
+            }
             if let Some((d, e)) = outline(b, o + 2, end, out) {
                 let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(1, 400), bgr(b, o + 10));
                 let _ = write!(out.s, "<path d=\"{}\" fill=\"none\" stroke=\"{line}\" stroke-width=\"{lw}\" stroke-linejoin=\"round\"/>", e.unwrap_or(d));
@@ -231,6 +263,9 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
         // 6001: a straight line, x1 y1 x2 y2 from +16; 6005: an open
         // line, u32 point count at +14, the points from +18
         0x6001 | 0x6301 | 0x6005 | 0x6305 => {
+            if no_line {
+                return;
+            }
             let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(1, 400), bgr(b, o + 10));
             let (n, at) = if ty & 0xff == 0x01 { (2usize, o + 16) } else { (bei(b, o + 14).unwrap_or(0).clamp(0, 100_000) as usize, o + 18) };
             if n >= 2 && at + 8 * n <= end {
@@ -252,6 +287,7 @@ fn figure_box(b: &[u8], o: usize) -> Option<(i32, i32, i32, i32)> {
     let ty = le16(b, o + 2)?;
     match ty {
         0x600a | 0x600b => Some((bei(b, o + 20)?, bei(b, o + 24)?, bei(b, o + 28)?, bei(b, o + 32)?)),
+        0x600f => Some((bei(b, o + 6)?, bei(b, o + 10)?, bei(b, o + 14)?, bei(b, o + 18)?)),
         0x6001 | 0x6301 => {
             let (x1, y1, x2, y2) = (bei(b, o + 16)?, bei(b, o + 20)?, bei(b, o + 24)?, bei(b, o + 28)?);
             Some((x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2)))
@@ -299,6 +335,11 @@ fn figure_box(b: &[u8], o: usize) -> Option<(i32, i32, i32, i32)> {
 
 /// Every figure of one `FDMVector` stream, in order.
 pub fn figures(b: &[u8]) -> Vec<Figure> {
+    figures_with(b, &[])
+}
+
+/// [`figures`], with the `FDMBitmap` stream beside it for textures.
+pub fn figures_with(b: &[u8], bm: &[u8]) -> Vec<Figure> {
     let mut v = Vec::new();
     let mut o = 0usize;
     let mut prev: Option<(i32, i32, i32, i32)> = None;
@@ -325,7 +366,7 @@ pub fn figures(b: &[u8]) -> Vec<Figure> {
         }
         if let Some(bx) = figure_box(b, o) {
             let ty = le16(b, o + 2).unwrap_or(0) & 0xfcff;
-            let mut out = Out { s: String::new(), cmds: 0, ids: 0 };
+            let mut out = Out { s: String::new(), cmds: 0, ids: 0, bm };
             figure_rec(b, o, 0, &mut out);
             if let Some((w, h, svg)) = make(bx, &out.s) {
                 // a bare outline drawn over the shape before it (the black
@@ -359,7 +400,7 @@ pub fn snapshot_svg(b: &[u8]) -> Option<String> {
     if !(1..=2_000_000).contains(&w) || !(1..=2_000_000).contains(&h) {
         return None;
     }
-    let mut out = Out { s: String::new(), cmds: 0, ids: 0 };
+    let mut out = Out { s: String::new(), cmds: 0, ids: 0, bm: &[] };
     let mut objs: Vec<(i32, bool, String, i32)> = Vec::new(); // handle, is brush, colour, width
     let (mut brush, mut pen): (Option<String>, Option<(String, i32)>) = (None, None);
     let mut path = String::new();
@@ -528,6 +569,26 @@ fn snapshot_bitmap(d: &[u8], ty: i32) -> Option<(i32, i32, i32, i32, Vec<u8>)> {
         }
     }
     Some((x, y, w, h, png_rgba(pw as u32, ph as u32, &rgba)))
+}
+
+/// A picture of `FDMBitmap`: a header with u16 width, height, row bytes
+/// and bits per pixel (24: R G B) at +16, and the u32 offset of the pixels
+/// at +28 (60), rows from the top. (width, height, PNG).
+fn texture_png(p: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    let (w, h, st, bpp) = (be16(p, 16)? as usize, be16(p, 18)? as usize, be16(p, 20)? as usize, be16(p, 22)?);
+    let at = bei(p, 28)? as usize;
+    if w == 0 || h == 0 || w > 4096 || h > 4096 || bpp != 24 || st < w * 3 {
+        return None;
+    }
+    let px = p.get(at..at.checked_add(st * h)?)?;
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for r in 0..h {
+        for x in 0..w {
+            let q = r * st + x * 3;
+            rgba.extend_from_slice(&[px[q], px[q + 1], px[q + 2], 255]);
+        }
+    }
+    Some((w as u32, h as u32, png_rgba(w as u32, h as u32, &rgba)))
 }
 
 // ------------------------------------------------------------------ PNG

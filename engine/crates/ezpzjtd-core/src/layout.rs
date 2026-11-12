@@ -64,10 +64,22 @@ pub struct PageSetup {
     /// Frames the text goes round (回り込み), by id.
     #[serde(skip)]
     pub wrap: Vec<u16>,
+    /// Of those, the text boxes that move empty lines too (see
+    /// `Frame::wrap_blank`).
+    #[serde(skip)]
+    pub wrap_blank: Vec<u16>,
     /// Lines as tall as their characters plus a small gap, not on the page's
     /// line grid (text boxes).
     #[serde(skip)]
     pub free_lines: bool,
+    /// The gap between the lines of a text box (pt), from its `6009`; else
+    /// 0.28 of the character size.
+    #[serde(skip)]
+    pub line_gap_pt: Option<f32>,
+    /// The character pitch when it is not the text width over the
+    /// characters per line (a text box of 18.5 characters).
+    #[serde(skip)]
+    pub cell_pt: Option<f32>,
     /// 縦組み: the page is laid out turned a quarter turn (width and height
     /// swapped, the right margin on top), so lines run top to bottom and
     /// follow each other from right to left once the drawing is turned back.
@@ -129,7 +141,10 @@ impl Default for PageSetup {
             on_text: Vec::new(),
             z_order: Vec::new(),
             wrap: Vec::new(),
+            wrap_blank: Vec::new(),
             free_lines: false,
+            line_gap_pt: None,
+            cell_pt: None,
             vertical: false,
             columns: 1,
             col_gap_mm: 0.0,
@@ -160,6 +175,10 @@ const COL_CELL: f32 = 1.031;
 /// shadow, starts one line further down). Lines go right under a picture
 /// (the school name 1.8 mm under the title picture) and beside a narrow box.
 const WRAP_GAP: f32 = 4.0 * MM;
+
+/// An empty line keeps this far below a text box it goes round (see
+/// `Ctx::blank_room`).
+const BOX_GAP: f32 = 2.0 * MM;
 
 fn is_plain_kind(k: &u8) -> bool {
     *k <= 1
@@ -215,7 +234,10 @@ impl PageSetup {
             on_text: self.on_text.clone(),
             z_order: self.z_order.clone(),
             wrap: self.wrap.clone(),
+            wrap_blank: self.wrap_blank.clone(),
             free_lines: self.free_lines,
+            line_gap_pt: self.line_gap_pt,
+            cell_pt: self.cell_pt,
             vertical: self.vertical,
             columns: self.columns.clamp(1, 10),
             col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
@@ -252,7 +274,7 @@ impl PageSetup {
     /// cells. Ichitaro spreads the characters over the line this way
     /// (字間 = cell − character size).
     pub fn cell(&self) -> f32 {
-        self.text_w() / self.chars_per_line.max(1) as f32
+        self.cell_pt.unwrap_or_else(|| self.text_w() / self.chars_per_line.max(1) as f32)
     }
     /// Horizontal scale from character size to advance (1 + 字間). When the
     /// document asks for more characters than fit, Ichitaro places them at
@@ -349,6 +371,10 @@ pub enum Item {
         /// Fill: one colour or gradient stops (0-1, colour), at `angle` degrees.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         fill: Vec<(f32, String)>,
+        /// A table cell's shading: part of the text, drawn with it over
+        /// the pictures and boxes (a 学校便り's white table on its green page)
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        cell: bool,
         #[serde(skip_serializing_if = "is_zero_f")]
         angle: f32,
         /// Shadow offset (pt) and colour.
@@ -568,10 +594,43 @@ impl<'a> Ctx<'a> {
     fn free_span(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32) -> Result<(f32, f32), f32> {
         match self.free_span_of(l, r, y1, y2, min_w, false) {
             Ok(s) => Ok(s),
-            // a text box leaves no room: the text is set over it unless a
+            // one text box leaves no room: the text is set over it unless a
             // picture is in the way too (checked on a school handout)
             Err(_) => self.free_span_of(l, r, y1, y2, min_w, true),
         }
+    }
+
+    /// Whether text boxes that move empty lines (`PageSetup::wrap_blank`) leave an empty line at
+    /// `y1..y2` a stretch of `min_w`. A box keeps the text BOX_GAP below it
+    /// (the line just under a 学校だより's 5月の box, 1.3 mm below it, is
+    /// skipped in 一太郎ビューア); one that starts in the lower part of the
+    /// line leaves it (the line 3 mm above the 生活目標 boxes stays).
+    fn blank_room(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32) -> bool {
+        let mut segs = vec![(l, r)];
+        let low_edge = y2 - (y2 - y1) * 0.4;
+        for &(pg, col, x1, fy1, x2, fy2, _, id) in &self.wraps {
+            if pg != self.page || col != self.col || !self.setup.wrap_blank.contains(&id) {
+                continue;
+            }
+            if fy1 >= low_edge || fy2 + BOX_GAP <= y1 || x2 <= l || x1 >= r {
+                continue;
+            }
+            let mut next = Vec::new();
+            for (a, b) in segs {
+                if x2 <= a || x1 >= b {
+                    next.push((a, b));
+                    continue;
+                }
+                if x1 > a {
+                    next.push((a, x1));
+                }
+                if x2 < b {
+                    next.push((x2, b));
+                }
+            }
+            segs = next;
+        }
+        segs.iter().any(|s| s.1 - s.0 >= min_w)
     }
 
     fn free_span_of(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32, only_push: bool) -> Result<(f32, f32), f32> {
@@ -668,7 +727,7 @@ impl<'a> Ctx<'a> {
             let (w, h) = if self.setup.vertical { (self.setup.page_h(), self.setup.page_w()) } else { (self.setup.page_w(), self.setup.page_h()) };
             let mut bg = Vec::new();
             if let Some(c) = colour {
-                bg.push(Item::Rect { x: 0.0, y: 0.0, w, h, r: 0.0, lw: 0.0, color: c.clone(), dot: false, noline: true, fill: vec![(0.0, c.clone())], angle: 0.0, shadow: None, z: 0 });
+                bg.push(Item::Rect { x: 0.0, y: 0.0, w, h, r: 0.0, lw: 0.0, color: c.clone(), dot: false, noline: true, fill: vec![(0.0, c.clone())], cell: false, angle: 0.0, shadow: None, z: 0 });
             }
             if pic {
                 bg.push(Item::Image { id: crate::frames::BACKGROUND, x: 0.0, y: 0.0, w, h, z: 0 });
@@ -706,6 +765,7 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
     };
     for (ri, r) in p.runs.iter().enumerate() {
         let shared = Rc::new(r.style.clone());
+        let first = out.len();
         for ch in r.text.chars() {
             if let Some((po, txt)) = pre {
                 if po == off {
@@ -736,6 +796,17 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
                 pre: false,
             });
             off += 1;
+        }
+        // 均等割付: the run's characters fill its width (1/120 inch = 0.6 pt)
+        if let Some(fit) = r.fit {
+            let own: Vec<usize> = (first..out.len()).filter(|&k| !out[k].pre).collect();
+            if own.len() > 1 {
+                let total: f32 = own.iter().map(|&k| out[k].w).sum();
+                let gap = (fit as f32 * 0.6 - total) / (own.len() - 1) as f32;
+                for &k in &own[..own.len() - 1] {
+                    out[k].w = (out[k].w + gap).max(0.0);
+                }
+            }
         }
     }
     if let Some((po, txt)) = pre {
@@ -881,7 +952,25 @@ fn layout_para(
             // picture, ca202f)
             // (a line of spaces holding drawings stays: a380's choir figures)
             let floating = li == 0 && gs.is_empty() && p.frames.iter().any(|f| !setup.fixed.contains(f));
-            let tries = if gs.iter().all(|g| g.ch.is_whitespace()) && !floating { 0 } else { 64 };
+            let blank = gs.iter().all(|g| g.ch.is_whitespace()) && !floating;
+            // ...but text boxes that leave it less than a character of room
+            // move it down a line at a time (a 学校だより's empty lines
+            // beside its boxes: four lines go where only 3 mm is left beside
+            // the 生活目標 boxes, and its calendar lands four lines lower in
+            // 一太郎ビューア)
+            if blank {
+                for _ in 0..64 {
+                    if ctx.blank_room(l0, r0, ctx.y, ctx.y + pitch, base) {
+                        break;
+                    }
+                    if ctx.y + pitch * 2.0 > ctx.bottom() + 0.5 {
+                        ctx.new_page();
+                    } else {
+                        ctx.y += pitch;
+                    }
+                }
+            }
+            let tries = if blank { 0 } else { 64 };
             for _ in 0..tries {
                 match ctx.free_span(l0, r0, ctx.y, ctx.y + pitch, (base * 3.0).min(r0 - l0)) {
                     Ok(sp) => {
@@ -929,7 +1018,7 @@ fn layout_para(
         let h = if setup.free_lines {
             // a text box: 10.5 pt lines 13.4 pt apart and 21 pt lines 24 pt
             // apart in 一太郎ビューア
-            max_size + base * 0.28 + if has_ruby { max_size * 0.5 } else { 0.0 }
+            max_size + setup.line_gap_pt.unwrap_or(base * 0.28) + if has_ruby { max_size * 0.5 } else { 0.0 }
         } else if pitch > 0.0 && pitch.is_finite() {
             pitch * (need / pitch).ceil().max(1.0)
         } else {
@@ -955,13 +1044,16 @@ fn layout_para(
             Align::Right => left + (width - lw).max(0.0),
             _ => left,
         };
-        // Per-character x positions
+        // Per-character x positions; 均等割付 spreads the room left over
+        // the gaps between the characters
+        let spread = if p.align == Align::Distribute && line.len() > 1 { ((width - lw) / (line.len() - 1) as f32).max(0.0) } else { 0.0 };
         let mut x = x0;
         let mut gx = Vec::with_capacity(line.len());
         for g in line {
             gx.push(x);
-            x += g.w;
+            x += g.w + spread;
         }
+        let x = x - if line.is_empty() { 0.0 } else { spread };
         let end_x = x;
         // Model offsets covered by this line and the x of each boundary.
         let start = model_pos;
@@ -983,7 +1075,7 @@ fn layout_para(
                 if (at >= start && at < end) || (li == 0 && at < start) || (is_last && at >= end) {
                     let k = line.iter().position(|g| g.off == Some(at));
                     let ax = k.map_or(x0, |k| gx[k]);
-                    push_frames_at(ctx, &[f], top, Some(ax));
+                    push_frames_at(ctx, &[f], top, Some(ax), false);
                 }
             }
         }
@@ -1161,27 +1253,44 @@ fn draw_ruled(ctx: &mut Ctx, g: &crate::doc::RowLines, width: u16, top: f32, bot
     }
     let xu = |u: u16| left + u as f32 * unit;
     let mid = (top + bottom) / 2.0;
-    let line = |x1: f32, y1: f32, x2: f32, y2: f32, k: u8| Item::Line {
+    let line = |x1: f32, y1: f32, x2: f32, y2: f32, k: u8, c: Option<u32>| Item::Line {
         x1,
         y1,
         x2,
         y2,
         w: line_width(k),
-        color: Some(if k == 16 { "#888" } else { "#222" }.to_string()),
+        color: Some(rule_color(k, c)),
         k,
     };
     for (i, &(x, up, down)) in g.verticals.iter().enumerate() {
         let (ku, kd) = g.vertical_kinds.get(i).copied().unwrap_or_default();
+        let (cu, cd) = g.vertical_colors.get(i).copied().unwrap_or_default();
         let (y1, y2) = (if up { top } else { mid }, if down { bottom } else { mid });
-        ctx.items().push(line(xu(x), y1, xu(x), y2, if up { ku } else { kd }));
+        ctx.items().push(line(xu(x), y1, xu(x), y2, if up { ku } else { kd }, if up { cu } else { cd }));
     }
     for (i, &(x1, x2)) in g.below.iter().enumerate() {
         let k = g.below_kinds.get(i).copied().unwrap_or(0);
-        ctx.items().push(line(xu(x1), bottom, xu(x2), bottom, k));
+        ctx.items().push(line(xu(x1), bottom, xu(x2), bottom, k, g.below_colors.get(i).copied().flatten()));
     }
     for (i, &(x1, x2)) in g.middle.iter().enumerate() {
         let k = g.middle_kinds.get(i).copied().unwrap_or(0);
-        ctx.items().push(line(xu(x1), mid, xu(x2), mid, k));
+        ctx.items().push(line(xu(x1), mid, xu(x2), mid, k, g.middle_colors.get(i).copied().flatten()));
+    }
+}
+
+/// A ruled line's colour: its own (`00 BB GG RR`) or the default ink.
+fn rule_color(k: u8, c: Option<u32>) -> String {
+    match c {
+        Some(v) => format!("#{:02x}{:02x}{:02x}", v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff),
+        None => if k == 16 { "#888" } else { "#222" }.to_string(),
+    }
+}
+
+/// A cell's paragraph with the cell's own alignment over its own.
+fn own<'a>(c: &crate::doc::Cell, p: &'a Paragraph) -> std::borrow::Cow<'a, Paragraph> {
+    match c.align {
+        Some(a) if a != p.align => std::borrow::Cow::Owned(Paragraph { align: a, ..p.clone() }),
+        _ => std::borrow::Cow::Borrowed(p),
     }
 }
 
@@ -1203,8 +1312,13 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
         unit = (setup.text_w() + setup.cell() * 2.0) / width_units as f32;
     }
     let xu = |u: u16| left + u as f32 * unit;
-    let pad = unit * 1.5;
-    let line_c = Some("#222".to_string());
+    // text runs from where the cell starts to where it ends: a 4-character
+    // day fills a cell of 16 units, and 12 characters of 10 pt one of 46,
+    // its rules a unit off each side (a 学校便り's calendar in
+    // 一太郎ビューア; a 学校だより's クラブ活動 a unit from its rule); a
+    // cell of 68 units holds 17 characters of the grid (probed on an A5
+    // レインボー by filling a cell with 31 characters)
+    let pad = 0.0;
     for row in &t.rows {
         let spans = snapped_row(
             &row.cells
@@ -1246,7 +1360,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
             for (pi, p) in c.paragraphs.iter().enumerate() {
                 h += layout_para(
                     &mut scratch,
-                    p,
+                    &own(c, p),
                     *flat_start + pi,
                     xu(l) + pad,
                     xu(r) - pad,
@@ -1269,7 +1383,14 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
         }
         let top = ctx.y;
         // pictures anchored on this line: from the text area's left and the line's top
-        push_frames(ctx, &row.frames, top);
+        push_frames_at(ctx, &row.frames, top, None, true);
+        // cell shading (網掛け), under the text and the rules
+        for (ci, c) in row.cells.iter().enumerate() {
+            if let Some(fill) = &c.shade {
+                let (l, r) = spans[ci];
+                ctx.items().push(Item::Rect { x: xu(l), y: top, w: xu(r) - xu(l), h: row_h, r: 0.0, lw: 0.0, color: fill.clone(), dot: false, noline: true, fill: vec![(0.0, fill.clone())], cell: true, angle: 0.0, shadow: None, z: 0 });
+            }
+        }
         // Draw for real
         *flat_start -= row.cells.iter().map(|c| c.paragraphs.len()).sum::<usize>();
         for (ci, c) in row.cells.iter().enumerate() {
@@ -1278,7 +1399,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
             for (pi, p) in c.paragraphs.iter().enumerate() {
                 layout_para(
                     ctx,
-                    p,
+                    &own(c, p),
                     *flat_start + pi,
                     xu(l) + pad,
                     xu(r) - pad,
@@ -1292,38 +1413,35 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
         let bottom = top + row_h;
         let mid = (top + bottom) / 2.0;
         let g = row.lines();
-        let line = |x1: f32, y1: f32, x2: f32, y2: f32, k: u8| Item::Line {
+        let line = |x1: f32, y1: f32, x2: f32, y2: f32, k: u8, c: Option<u32>| Item::Line {
             x1,
             y1,
             x2,
             y2,
             w: line_width(k),
-            color: if k == 16 {
-                Some("#888".to_string())
-            } else {
-                line_c.clone()
-            },
+            color: Some(rule_color(k, c)),
             k,
         };
         for (i, &(x, up, down)) in g.verticals.iter().enumerate() {
             let (ku, kd) = g.vertical_kinds.get(i).copied().unwrap_or_default();
-            if up && down && ku != kd {
+            let (cu, cd) = g.vertical_colors.get(i).copied().unwrap_or_default();
+            if up && down && (ku != kd || cu != cd) {
                 // the two halves have their own types
-                ctx.items().push(line(xu(x), top, xu(x), mid, ku));
-                ctx.items().push(line(xu(x), mid, xu(x), bottom, kd));
+                ctx.items().push(line(xu(x), top, xu(x), mid, ku, cu));
+                ctx.items().push(line(xu(x), mid, xu(x), bottom, kd, cd));
             } else {
                 let (y1, y2) = (if up { top } else { mid }, if down { bottom } else { mid });
                 ctx.items()
-                    .push(line(xu(x), y1, xu(x), y2, if up { ku } else { kd }));
+                    .push(line(xu(x), y1, xu(x), y2, if up { ku } else { kd }, if up { cu } else { cd }));
             }
         }
         for (i, &(x1, x2)) in g.below.iter().enumerate() {
             let k = g.below_kinds.get(i).copied().unwrap_or(0);
-            ctx.items().push(line(xu(x1), bottom, xu(x2), bottom, k));
+            ctx.items().push(line(xu(x1), bottom, xu(x2), bottom, k, g.below_colors.get(i).copied().flatten()));
         }
         for (i, &(x1, x2)) in g.middle.iter().enumerate() {
             let k = g.middle_kinds.get(i).copied().unwrap_or(0);
-            ctx.items().push(line(xu(x1), mid, xu(x2), mid, k));
+            ctx.items().push(line(xu(x1), mid, xu(x2), mid, k, g.middle_colors.get(i).copied().flatten()));
         }
         ctx.y = bottom;
     }
@@ -1684,13 +1802,13 @@ impl PartialEq for Boxes {
 /// text area's left and the line's top. Pictures go under the text (the
 /// editor draws images first), box text with the rest.
 fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
-    push_frames_at(ctx, ids, top, None)
+    push_frames_at(ctx, ids, top, None, false)
 }
 
 /// [`push_frames`], measuring frames anchored on a character from `at_x`
 /// (縦組み: the anchoring character's place down the line) rather than
 /// from the text area's left.
-fn push_frames_at(ctx: &mut Ctx, ids: &[u16], top: f32, at_x: Option<f32>) {
+fn push_frames_at(ctx: &mut Ctx, ids: &[u16], top: f32, at_x: Option<f32>, in_row: bool) {
     let setup = ctx.setup;
     let (tl, mm) = (at_x.unwrap_or(setup.left()), MM / 100.0);
     for id in ids {
@@ -1714,7 +1832,10 @@ fn push_frames_at(ctx: &mut Ctx, ids: &[u16], top: f32, at_x: Option<f32>) {
         // a character is measured as across, its x down the line and its y
         // from the line's right edge, and keeps its size on the paper (a
         // photo and the boxes of 玉東中便り)
-        let on_line = setup.vertical && !fixed && !setup.on_text.contains(id);
+        // (one anchored in a ruled line goes with that line whatever its
+        // word [5]: the scroll, 生活目標 bar and title board of a 学校便り
+        // whose page is one ruled table)
+        let on_line = setup.vertical && !fixed && (in_row || !setup.on_text.contains(id));
         let vert = setup.vertical && !on_line;
         let (px0, py0) = if fixed { (0.0, 0.0) } else { (setup.margin_bottom_mm * MM, setup.margin_left_mm * MM) };
         let dx = ctx.dx;
@@ -1815,28 +1936,73 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         let flat = setup.vertical && !b.vertical;
         let [pl, pr, pt, pb] = b.pad.map(|v| v as f32 / 100.0);
         let (bw, bh) = (f.w as f32 / 100.0, f.h as f32 / 100.0);
+        // a box with a drop shadow is the frame less the shadow: its line
+        // and text end that far in (a 学校だより's green boxes, 1 mm, in
+        // 一太郎ビューア). Boxes drawn as they are on the paper only.
+        let (sx, sy) = match b.border.as_ref().and_then(|bd| bd.shadow.as_ref()) {
+            Some((x, y, _)) if !turned || flat => (x.min(bw / 4.0), y.min(bh / 4.0)),
+            _ => (0.0, 0.0),
+        };
+        let (bw, bh) = (bw - sx, bh - sy);
         // paper (left, right, top, bottom) → layout (top, bottom, right, left)
         let (pl, pr, pt, pb, bw, bh) = if turned && !flat { (pt, pb, pr, pl, bh, bw) } else { (pl, pr, pt, pb, bw, bh) };
         let inner_w = (bw - pl - pr).max(1.0) * MM;
         let inner_h = (bh - pt - pb).max(1.0) * MM;
-        // line pitch 1.25 characters (a handout's box: seven lines of
+        // line pitch: the character and the box's own gap between lines
+        // (6009), else 1.25 characters (a handout's box: seven lines of
         // 10.5 pt in 33 mm, and two lines of 21 pt and one of 15 pt in 23 mm)
-        let pitch = font * 1.25;
+        let gap = b.line_gap.map(|g| g as f32 / 100.0 * MM);
+        let pitch = gap.map_or(font * 1.25, |g| font + g);
         let lines = ((inner_h / pitch).floor() as u32).max(1);
         // room below the box too, so that anchors on later lines still place
         // their pictures; text past the box is cut off below
         let n = (lines + 200).min(((1400.0 * MM - pt * MM) / pitch).floor().max(2.0) as u32).max(2);
         let width = bw.max(60.0);
         let height = (pt + pitch * n as f32 / MM + 1.0).max(60.0);
+        // the box's 字数 at the character's own pitch, set in the middle of
+        // the room (a 学校だより's box of 31 characters 1.3 mm in from its
+        // margins in 一太郎ビューア); else as many as fit
+        // (a 48 pt line of ten characters in a box 9.98 characters long)
+        // (half a character counts: 37 half-width on a 学校だより's box
+        // hold 「４月２３日（火）、…校外学習」, 19 characters with 「）」 half)
+        let fit = ((inner_w / font + 0.05).floor() as u32).max(1);
+        // (字数 counts the characters as written: 「５月の」 in 12 pt fills a
+        // box of three 10.5 pt characters' 字数 that is 36.5 pt long)
+        // (the size most of its characters have: a 11 pt heading over
+        // 10.5 pt lines keeps the lines' 字数)
+        let mut sizes: Vec<(f32, usize)> = Vec::new();
+        for bl in &b.blocks {
+            if let crate::doc::Block::Paragraph(p) = bl {
+                for r in &p.runs {
+                    let n = r.text.chars().filter(|c| !c.is_whitespace()).count();
+                    let sz = r.style.size_pt.unwrap_or(font);
+                    match sizes.iter_mut().find(|e| (e.0 - sz).abs() < 0.01) {
+                        Some(e) => e.1 += n,
+                        None => sizes.push((sz, n)),
+                    }
+                }
+            }
+        }
+        let big = sizes.iter().max_by_key(|e| e.1).map_or(font, |e| e.0).max(font);
+        let (chars, side, cell) = match b.half_chars.map(|h| h as f32 / 2.0) {
+            Some(c) if c >= 1.0 && c <= inner_w / font + 0.05 => {
+                // (a box a hair short of its 字数 squeezes the characters:
+                // ten 48 pt characters in a 卒業証書's box 9.98 of them long)
+                let line = (c * big).min(inner_w);
+                (c.ceil() as u32, (inner_w - line).max(0.0) / 2.0 / MM, Some((line / c).min(font)))
+            }
+            _ => (fit, 0.0, None),
+        };
         let sub = PageSetup {
             width_mm: width,
             height_mm: height,
-            margin_left_mm: pl,
-            margin_right_mm: width - bw + pr,
+            margin_left_mm: pl + side,
+            margin_right_mm: width - bw + pr + side,
             margin_top_mm: pt,
             margin_bottom_mm: height - pt - pitch * n as f32 / MM,
-            // (a 48 pt line of ten characters in a box 9.98 characters long)
-            chars_per_line: ((inner_w / font + 0.05).floor() as u32).max(1),
+            chars_per_line: chars,
+            line_gap_pt: gap,
+            cell_pt: cell,
             lines_per_page: n,
             font_pt: font,
             gothic: setup.gothic.clone(),
@@ -1848,6 +2014,9 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             // drawn in an empty box next to a heading)
             frames: setup.frames.clone(),
             free_lines: true,
+            // the stacking order of the pictures anchored in the box's text
+            // (else they sit under the box's own fill and shadow)
+            z_order: setup.z_order.clone(),
             ..PageSetup::default()
         };
         let l = layout_with(&b.blocks, &sub, false, None, 1);
@@ -1879,6 +2048,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 dot: bd.dotted,
                 noline: !bd.line,
                 fill: bd.fill.clone(),
+                cell: false,
                 angle: bd.angle,
                 shadow: bd.shadow.as_ref().map(|(x, y, c)| (x * MM, y * MM, c.clone())),
                 z: setup.z_of(f.id),
@@ -1888,7 +2058,9 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             .items
             .iter()
             .filter(|it| match it {
-                Item::Text { y, .. } => *y <= max_y,
+                // a line whose characters start inside the box shows (a
+                // 56 pt 笹川太郎 in a box narrower than its line pitch)
+                Item::Text { y, size, .. } => *y - *size * 0.88 <= max_y,
                 Item::Mark { .. } => false,
                 _ => true,
             })

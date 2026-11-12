@@ -16,6 +16,9 @@ pub enum Align {
     Left,
     Center,
     Right,
+    /// 3: 均等割付, the characters spread over the line (a 学校だより's
+    /// 「学 校 だ よ り」 and 「6 月 の 行 事 予 定」 labels)
+    Distribute,
     /// Other values seen in TLV tag 0x24 that are not decoded yet.
     Other,
 }
@@ -98,6 +101,11 @@ pub struct Run {
     /// From an inline segment (ruby base / 均等割付 / field).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub inline: bool,
+    /// 均等割付: the width the characters are spread over (or squeezed
+    /// into), in 1/120 inch (the `0000` record `0, 7, width, 020d` before
+    /// the inline segment; probed by halving a 学校だより's two widths)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fit: Option<u16>,
 }
 
 /// Paragraph indents (インデント), line header TLV `0026`: (unit, left,
@@ -229,6 +237,17 @@ pub struct Cell {
     pub left: u16,
     pub right: u16,
     pub paragraphs: Vec<Paragraph>,
+    /// Cell shading (網掛け) `#rrggbb`: the cell record's property 16
+    /// colour at property 12 per cent (10 on a 学校便り's grey Saturday
+    /// rows, 50 on light teal weekend columns, 100 on a grey column).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shade: Option<String>,
+    /// The cell's own text alignment (文字揃え), the cell record's fourth
+    /// word: 0 left, 1 centre, 2 right (縦組み: to the line's end), 3
+    /// spread; 0xff none. Over the paragraphs' own (a 学校便り's calendar:
+    /// days to the bottom, weekdays centred; checked with 一太郎ビューア)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub align: Option<Align>,
     #[serde(skip)]
     pub src: Src<CellSrc>,
 }
@@ -272,6 +291,40 @@ pub struct RuleKinds {
     /// The vertical rule that `b` places at the end of the item's own line.
     pub b_up: u8,
     pub b_down: u8,
+    /// Colours (`00 BB GG RR`; `None` = auto, black), from properties 15,
+    /// 16, 17 and 20 on the same words as the types 1, 2, 3 and 8 (a
+    /// 学校便り's green table, a navy 行事予定)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_up: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_down: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_mid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_below: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_next_mid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_next_below: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_b_up: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c_b_down: Option<u32>,
+}
+
+/// The shading of a cell from its record's style (see `Cell::shade`).
+fn cell_shade(p: Option<&crate::style::RawProps>) -> Option<String> {
+    let p = p?;
+    if p.get(&20).copied().unwrap_or(0) & 0x8000_0000 == 0 {
+        return None;
+    }
+    let pct = *p.get(&12)?;
+    let c = *p.get(&16)?;
+    if pct == 0 || pct > 100 || c > 0x00ff_ffff {
+        return None;
+    }
+    let mix = |v: u32| 255 - ((255 - v) * pct + 50) / 100;
+    Some(format!("#{:02x}{:02x}{:02x}", mix(c & 0xff), mix((c >> 8) & 0xff), mix((c >> 16) & 0xff)))
 }
 
 /// One item of a ruled line: `(style, a, b, dist)` (spec §4.3).
@@ -321,6 +374,10 @@ pub struct RowLines {
     pub vertical_kinds: Vec<(u8, u8)>,
     pub below_kinds: Vec<u8>,
     pub middle_kinds: Vec<u8>,
+    /// Colours, one per entry like the kinds
+    pub vertical_colors: Vec<(Option<u32>, Option<u32>)>,
+    pub below_colors: Vec<Option<u32>>,
+    pub middle_colors: Vec<Option<u32>>,
 }
 
 impl Row {
@@ -341,6 +398,7 @@ impl Row {
                 out.verticals
                     .push((c as u16, v & Rule::UP != 0, v & Rule::DOWN != 0));
                 out.vertical_kinds.push((k.up, k.down));
+                out.vertical_colors.push((k.c_up, k.c_down));
             }
             // `b` with a class (0x10 / 0x20) is the style of a vertical rule
             // at the end of this item's own line (`centre + a + 1`)
@@ -349,11 +407,12 @@ impl Row {
                 out.verticals
                     .push((x, r.b & Rule::UP != 0, r.b & Rule::DOWN != 0));
                 out.vertical_kinds.push((k.b_up, k.b_down));
+                out.vertical_colors.push((k.c_b_up, k.c_b_down));
             }
             let own = r.style & (Rule::MID | Rule::BELOW);
             let to_next = r.b & (Rule::MID | Rule::BELOW);
             // kinds: (through the middle, under the line)
-            let mut push = |bits: u16, x1: u32, x2: u32, (km, kb): (u8, u8)| {
+            let mut push = |bits: u16, x1: u32, x2: u32, (km, kb): (u8, u8), (cm, cb): (Option<u32>, Option<u32>)| {
                 let seg = (
                     x1.min(u16::MAX as u32) as u16,
                     x2.min(u16::MAX as u32) as u16,
@@ -362,20 +421,22 @@ impl Row {
                     if bits & Rule::BELOW != 0 {
                         out.below.push(seg);
                         out.below_kinds.push(kb);
+                        out.below_colors.push(cb);
                     }
                     if bits & Rule::MID != 0 {
                         out.middle.push(seg);
                         out.middle_kinds.push(km);
+                        out.middle_colors.push(cm);
                     }
                 }
             };
             if own != 0 && r.a > 0 {
-                push(own, c, c + r.a as u32 + 1, (k.mid, k.below));
+                push(own, c, c + r.a as u32 + 1, (k.mid, k.below), (k.c_mid, k.c_below));
             }
             if to_next != 0 {
-                push(to_next, c, next, (k.next_mid, k.next_below));
+                push(to_next, c, next, (k.next_mid, k.next_below), (k.c_next_mid.or(k.c_mid), k.c_next_below.or(k.c_below)));
             } else if own != 0 && r.a == 0 {
-                push(own, c, next, (k.mid, k.below));
+                push(own, c, next, (k.mid, k.below), (k.c_mid, k.c_below));
             }
             c = next;
         }
@@ -404,6 +465,7 @@ fn rule_kinds(map: &StyleMap, v0: usize, n: usize) -> Vec<RuleKinds> {
             _ => 0,
         }
     };
+    let col = |u: usize, id: u8| -> Option<u32> { map.at(u).and_then(|p| p.get(&id).copied()).filter(|&v| v <= 0x00ff_ffff) };
     let mut out = Vec::new();
     let mut i = 3usize;
     while i + 1 < n {
@@ -418,6 +480,14 @@ fn rule_kinds(map: &StyleMap, v0: usize, n: usize) -> Vec<RuleKinds> {
             next_below: if full { get(u + 2, 8) } else { 0 },
             b_up: if full { get(u + 2, 1) } else { 0 },
             b_down: if full { get(u + 2, 2) } else { 0 },
+            c_up: col(u, 15),
+            c_down: col(u, 16),
+            c_mid: col(u, 17),
+            c_below: col(u, 20),
+            c_next_mid: if full { col(u + 2, 17) } else { None },
+            c_next_below: if full { col(u + 2, 20) } else { None },
+            c_b_up: if full { col(u + 2, 15) } else { None },
+            c_b_down: if full { col(u + 2, 16) } else { None },
         });
         i += if full { 4 } else { 2 };
     }
@@ -894,6 +964,8 @@ struct Builder<'a> {
     marker_para: bool,
     /// Word 2 of the last `0020` record (段組: 段 count less one).
     marker_cols: u16,
+    /// 均等割付 width for the next inline segment
+    fit: Option<u16>,
     map: &'a StyleMap,
     blocks: Vec<Block>,
     para: Paragraph,
@@ -940,6 +1012,7 @@ impl<'a> Builder<'a> {
                     style: st,
                     ruby: None,
                     inline,
+                    fit: None,
                 }),
             }
             if self.t.on {
@@ -1150,6 +1223,7 @@ fn build_blocks(
     let mut b = Builder {
         marker_para: false,
         marker_cols: 0,
+        fit: None,
         map,
         blocks: Vec::new(),
         para: Paragraph::default(),
@@ -1214,6 +1288,7 @@ fn build_blocks(
                                 0 => Align::Left,
                                 1 => Align::Center,
                                 2 => Align::Right,
+                                3 => Align::Distribute,
                                 _ => Align::Other,
                             }
                         }
@@ -1303,6 +1378,14 @@ fn build_blocks(
                     left,
                     right,
                     paragraphs: Vec::new(),
+                    shade: cell_shade(b.map.at(start as usize)),
+                    align: match payload.get(3).copied() {
+                        Some(0) => Some(Align::Left),
+                        Some(1) => Some(Align::Center),
+                        Some(2) => Some(Align::Right),
+                        Some(3) => Some(Align::Distribute),
+                        _ => None,
+                    },
                     src: if track {
                         Src(Some(Box::new(CellSrc {
                             rec: (start, end - start),
@@ -1319,6 +1402,8 @@ fn build_blocks(
                 b.marker_cols = payload.get(2).copied().unwrap_or(0);
             }
             Token::Record { class: 0x0000, payload, .. } => {
+                // the context of the next inline segment: 均等割付 width
+                b.fit = (payload.len() >= 4 && payload[1] == 7 && payload[2] > 0).then(|| payload[2]);
                 if let Some(id) = crate::frames::anchor_id(payload) {
                     if b.para.frames.len() < 256 {
                         b.para.frames.push(id);
@@ -1346,6 +1431,7 @@ fn build_blocks(
                         style: st,
                         ruby: None,
                         inline: true,
+                        fit: b.fit.take(),
                     });
                     if track {
                         if b.t.start_eff.is_none() {
