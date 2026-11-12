@@ -154,6 +154,15 @@ pub fn embedding_map(b: &[u8]) -> Vec<(u16, u16)> {
 
 /// Pictures of the picture frames, by frame id (`Picture::item` holds the frame id).
 pub fn read_pictures(cfb: &Cfb, frames: &[Frame], max_bytes: usize) -> Vec<Picture> {
+    read_pictures_with(cfb, frames, max_bytes, &[])
+}
+
+/// [`read_pictures`], knowing the frames anchored in each text box's text
+/// (box layout number, frame ids): those show the figures of
+/// `/FigureData/layout_data n`, the rest those of `main_data`, each in item
+/// order (a 学校だより: 73 figures for 73 frames, rotated or outlined ones
+/// among them whose frames are not their size).
+pub fn read_pictures_with(cfb: &Cfb, frames: &[Frame], max_bytes: usize, box_anchors: &[(u32, Vec<u16>)]) -> Vec<Picture> {
     let map = cfb
         .read("/EmbedItems/EmbeddingInfo")
         .map(|b| embedding_map(&b))
@@ -197,14 +206,64 @@ pub fn read_pictures(cfb: &Cfb, frames: &[Frame], max_bytes: usize) -> Vec<Pictu
             }
         }
         let near = |a: u32, b: u32| a.abs_diff(b) <= 20.max(a / 50);
-        for f in frames.iter().filter(|f| f.kind == 4) {
-            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|(g, _)| near(g.w, f.w) && near(g.h, f.h))) else { continue };
+        // in item order, when the counts agree: the main figures for the
+        // frames not anchored in a box, each box's for its own
+        let mut done: Vec<u16> = Vec::new();
+        let mut by_order = |want: Option<u32>, fr: Vec<&Frame>, figs: &mut Vec<Option<(crate::figure::Figure, Option<u32>)>>, out: &mut Vec<Picture>, total: &mut usize| {
+            let idx: Vec<usize> = figs.iter().enumerate().filter(|(_, g)| g.as_ref().is_some_and(|(_, l)| *l == want)).map(|(i, _)| i).collect();
+            if idx.len() != fr.len() || fr.is_empty() {
+                return;
+            }
+            for (f, i) in fr.into_iter().zip(idx) {
+                let (g, layout) = figs[i].take().unwrap();
+                // the outline of the shape before it: drawn in that shape's box
+                let svg = match g.alt {
+                    Some((w, h, svg)) if near(w, f.w) && near(h, f.h) && !(near(g.w, f.w) && near(g.h, f.h)) => svg,
+                    _ => g.svg,
+                };
+                *total += svg.len();
+                if *total > max_bytes {
+                    return;
+                }
+                out.push(Picture { item: f.id, mime: "image/svg+xml", data: svg.into_bytes(), layout });
+                done.push(f.id);
+            }
+        };
+        let mut k4: Vec<&Frame> = frames.iter().filter(|f| f.kind == 4).collect();
+        k4.sort_by_key(|f| f.item);
+        for (layout, ids) in box_anchors {
+            let fr: Vec<&Frame> = k4.iter().copied().filter(|f| ids.contains(&f.id)).collect();
+            by_order(Some(*layout), fr, &mut figs, &mut out, &mut total);
+        }
+        let anchored: Vec<u16> = box_anchors.iter().flat_map(|(_, ids)| ids.iter().copied()).collect();
+        let main: Vec<&Frame> = k4.iter().copied().filter(|f| !anchored.contains(&f.id)).collect();
+        if !box_anchors.is_empty() || main.len() == figs.iter().filter(|g| g.as_ref().is_some_and(|(_, l)| l.is_none())).count() {
+            by_order(None, main, &mut figs, &mut out, &mut total);
+        }
+        // first by the figure's own size, then frames left over by the size
+        // of the shape a bare outline lies on
+        let mut left = Vec::new();
+        for f in frames.iter().filter(|f| f.kind == 4 && !done.contains(&f.id)) {
+            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|(g, _)| near(g.w, f.w) && near(g.h, f.h))) else {
+                left.push(f);
+                continue;
+            };
             let (g, layout) = slot.take().unwrap();
             total += g.svg.len();
             if total > max_bytes {
                 break;
             }
             out.push(Picture { item: f.id, mime: "image/svg+xml", data: g.svg.into_bytes(), layout });
+        }
+        for f in left {
+            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|(g, _)| g.alt.as_ref().is_some_and(|a| near(a.0, f.w) && near(a.1, f.h)))) else { continue };
+            let (g, layout) = slot.take().unwrap();
+            let svg = g.alt.map(|a| a.2).unwrap_or(g.svg);
+            total += svg.len();
+            if total > max_bytes {
+                break;
+            }
+            out.push(Picture { item: f.id, mime: "image/svg+xml", data: svg.into_bytes(), layout });
         }
     }
     out

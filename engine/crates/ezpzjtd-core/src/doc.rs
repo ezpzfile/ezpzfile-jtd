@@ -724,7 +724,19 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
         p
     });
     let frames = crate::frames::read_frames(&cfb, "");
-    let mut pictures = crate::frames::read_pictures(&cfb, &frames, limits.max_bytes);
+    let boxes = if frames.iter().any(|f| f.kind == 2) { crate::frames::read_boxes(&cfb, &mut budget.style_left) } else { Vec::new() };
+    let box_anchors: Vec<(u32, Vec<u16>)> = boxes
+        .iter()
+        .map(|b| {
+            let ids = b.blocks.iter().flat_map(|bl| match bl {
+                Block::Paragraph(p) => p.frames.clone(),
+                Block::Table(t) => t.rows.iter().flat_map(|r| r.frames.iter().copied().chain(r.cells.iter().flat_map(|c| c.paragraphs.iter().flat_map(|p| p.frames.clone())))).collect(),
+            });
+            (b.layout, ids.collect())
+        })
+        .filter(|(_, ids): &(u32, Vec<u16>)| !ids.is_empty())
+        .collect();
+    let mut pictures = crate::frames::read_pictures_with(&cfb, &frames, limits.max_bytes, &box_anchors);
     let (bg_colour, bg_pic) = cfb.read("/HtmlAdditionalData").map(|b| crate::frames::background(&b)).unwrap_or((None, None));
     let has_pic = bg_pic.is_some();
     if let Some((mime, data)) = bg_pic.filter(|p| p.1.len() <= limits.max_bytes) {
@@ -734,7 +746,6 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
         p.background = (bg_colour.clone(), has_pic);
         p
     });
-    let boxes = if frames.iter().any(|f| f.kind == 2) { crate::frames::read_boxes(&cfb, &mut budget.style_left) } else { Vec::new() };
     Ok(Document {
         format,
         summary,

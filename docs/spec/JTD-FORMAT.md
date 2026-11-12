@@ -614,6 +614,13 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.10** Figures go to frames of kind 4 in item order: the frames
+  anchored in a text box's text take `/FigureData/layout_data n` (n the
+  box's layout number), the others `main_data`, record by record (a
+  学校だより: 73 records for 73 frames). Sizes do not always agree: a bare
+  outline drawn over the shape before it has that shape's frame, and a
+  curve's frame is its own bounds, past its points. **observed**
+
 - **0.5.9** Figures: outline and record types `63xx` are the `60xx` ones
   (`6306` polygons: a 学校だより's flowers, carp streamers and boy).
   `6001` is a straight line (u16 width at +8, colour `00 BB GG RR` at

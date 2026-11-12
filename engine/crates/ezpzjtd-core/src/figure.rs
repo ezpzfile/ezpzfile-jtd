@@ -54,6 +54,9 @@ pub struct Figure {
     pub w: u32,
     pub h: u32,
     pub svg: String,
+    /// The same drawing in the box of the shape just before it, when it lies
+    /// inside that shape: (w, h, svg).
+    pub alt: Option<(u32, u32, String)>,
 }
 
 struct Out {
@@ -261,6 +264,33 @@ fn figure_box(b: &[u8], o: usize) -> Option<(i32, i32, i32, i32)> {
                 let (x, y) = (bei(b, q + 16 + 8 * i)?, bei(b, q + 20 + 8 * i)?);
                 (x1, y1, x2, y2) = (x1.min(x), y1.min(y), x2.max(x), y2.max(y));
             }
+            // a curve bulges past its points: its frame is the curve's own
+            // bounds (sampled along each segment)
+            if ty & 0xff == 0x09 && n >= 2 {
+                let v0 = q + 16 + 8 * n;
+                let fb = v0 + 16 * (n - 1);
+                let end = o + be16(b, o + 4)? as usize;
+                if fb <= end {
+                    let pt = |i: usize| (bei(b, q + 16 + 8 * i).unwrap_or(0) as f64, bei(b, q + 20 + 8 * i).unwrap_or(0) as f64);
+                    let v = |i: usize| (bei(b, v0 + 8 * i).unwrap_or(0) as f64, bei(b, v0 + 4 + 8 * i).unwrap_or(0) as f64);
+                    for i in 0..n - 1 {
+                        let f = if fb + n - 1 <= end { b[fb + i] } else { 0x31 };
+                        if f & 0x30 == 0 {
+                            continue;
+                        }
+                        let (p0, p3) = (pt(i), pt(i + 1));
+                        let (a, c) = (v(2 * i), v(2 * i + 1));
+                        let (p1, p2) = ((p0.0 + a.0, p0.1 + a.1), (p3.0 + c.0, p3.1 + c.1));
+                        for k in 1..16 {
+                            let t = k as f64 / 16.0;
+                            let u = 1.0 - t;
+                            let bx = u * u * u * p0.0 + 3.0 * u * u * t * p1.0 + 3.0 * u * t * t * p2.0 + t * t * t * p3.0;
+                            let by = u * u * u * p0.1 + 3.0 * u * u * t * p1.1 + 3.0 * u * t * t * p2.1 + t * t * t * p3.1;
+                            (x1, y1, x2, y2) = (x1.min(bx as i32), y1.min(by as i32), x2.max(bx as i32), y2.max(by as i32));
+                        }
+                    }
+                }
+            }
             (n > 0).then_some((x1, y1, x2, y2))
         }
         _ => None,
@@ -271,25 +301,45 @@ fn figure_box(b: &[u8], o: usize) -> Option<(i32, i32, i32, i32)> {
 pub fn figures(b: &[u8]) -> Vec<Figure> {
     let mut v = Vec::new();
     let mut o = 0usize;
+    let mut prev: Option<(i32, i32, i32, i32)> = None;
+    let make = |bx: (i32, i32, i32, i32), body: &str| -> Option<(u32, u32, String)> {
+        let (x1, y1, x2, y2) = bx;
+        let (w, h) = ((x2 as i64 - x1 as i64).max(1), (y2 as i64 - y1 as i64).max(1));
+        if w >= 4_000_000 || h >= 4_000_000 {
+            return None;
+        }
+        // lines a little past the box stay visible
+        let pad = 20;
+        let svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{} {} {} {}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\">{}</svg>",
+            x1 as i64 - pad, y1 as i64 - pad, w + 2 * pad, h + 2 * pad,
+            (w / 4).max(1), (h / 4).max(1), body
+        );
+        Some(((w as f64 * 2.5) as u32, (h as f64 * 2.5) as u32, svg))
+    };
     while o + 8 <= b.len() && v.len() < 4096 {
         let Some(ln) = be16(b, o + 4) else { break };
         let ln = ln as usize;
         if ln < 8 || o + ln > b.len() {
             break;
         }
-        if let Some((x1, y1, x2, y2)) = figure_box(b, o) {
-            let (w, h) = ((x2 as i64 - x1 as i64).max(1), (y2 as i64 - y1 as i64).max(1));
-            if w < 4_000_000 && h < 4_000_000 {
-                let mut out = Out { s: String::new(), cmds: 0, ids: 0 };
-                figure_rec(b, o, 0, &mut out);
-                // lines a little past the box stay visible
-                let pad = 20;
-                let svg = format!(
-                    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{} {} {} {}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\">{}</svg>",
-                    x1 as i64 - pad, y1 as i64 - pad, w + 2 * pad, h + 2 * pad,
-                    (w / 4).max(1), (h / 4).max(1), out.s
-                );
-                v.push(Figure { w: (w as f64 * 2.5) as u32, h: (h as f64 * 2.5) as u32, svg });
+        if let Some(bx) = figure_box(b, o) {
+            let ty = le16(b, o + 2).unwrap_or(0) & 0xfcff;
+            let mut out = Out { s: String::new(), cmds: 0, ids: 0 };
+            figure_rec(b, o, 0, &mut out);
+            if let Some((w, h, svg)) = make(bx, &out.s) {
+                // a bare outline drawn over the shape before it (the black
+                // outline of a filled flower or carp streamer) may have that
+                // shape's frame: its own box is smaller
+                let inside = |p: (i32, i32, i32, i32)| bx.0 >= p.0 - 8 && bx.1 >= p.1 - 8 && bx.2 <= p.2 + 8 && bx.3 <= p.3 + 8;
+                let alt = match prev {
+                    Some(p) if matches!(ty, 0x6001 | 0x6005 | 0x6006 | 0x6009) && inside(p) && p != bx => make(p, &out.s),
+                    _ => None,
+                };
+                v.push(Figure { w, h, svg, alt });
+            }
+            if matches!(ty, 0x600a | 0x600b) {
+                prev = Some(bx);
             }
         }
         o += ln;
