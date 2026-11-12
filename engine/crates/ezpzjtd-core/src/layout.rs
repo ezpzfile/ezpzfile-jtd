@@ -58,6 +58,9 @@ pub struct PageSetup {
     /// Frames measured from the text area's top left (word [5] = 1).
     #[serde(skip)]
     pub on_text: Vec<u16>,
+    /// Frame ids in `/Frame` order: the stacking order (later on top).
+    #[serde(skip)]
+    pub z_order: Vec<u16>,
     /// Frames the text goes round (回り込み), by id.
     #[serde(skip)]
     pub wrap: Vec<u16>,
@@ -86,6 +89,10 @@ pub struct PageSetup {
     /// 21.5 there).
     #[serde(default)]
     pub short_cols: bool,
+    /// The page background: a colour (`#rrggbb`) and whether a picture
+    /// (frame [`crate::frames::BACKGROUND`]) covers the paper.
+    #[serde(skip)]
+    pub background: (Option<String>, bool),
 }
 
 fn one_col() -> u32 {
@@ -117,6 +124,7 @@ impl Default for PageSetup {
             boxes: Default::default(),
             fixed: Vec::new(),
             on_text: Vec::new(),
+            z_order: Vec::new(),
             wrap: Vec::new(),
             free_lines: false,
             vertical: false,
@@ -124,6 +132,7 @@ impl Default for PageSetup {
             col_gap_mm: 0.0,
             rows: 1,
             short_cols: false,
+            background: (None, false),
         }
     }
 }
@@ -200,6 +209,7 @@ impl PageSetup {
             boxes: self.boxes.clone(),
             fixed: self.fixed.clone(),
             on_text: self.on_text.clone(),
+            z_order: self.z_order.clone(),
             wrap: self.wrap.clone(),
             free_lines: self.free_lines,
             vertical: self.vertical,
@@ -207,6 +217,7 @@ impl PageSetup {
             col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
             rows: self.rows.clamp(1, 2),
             short_cols: self.short_cols,
+            background: self.background.clone(),
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -249,6 +260,10 @@ impl PageSetup {
     }
     pub fn bottom(&self) -> f32 {
         self.page_h() - self.margin_bottom_mm * MM
+    }
+    /// A frame's stacking order: 1 + its place in `/Frame` (0 when unknown).
+    pub fn z_of(&self, id: u16) -> u16 {
+        self.z_order.iter().position(|&f| f == id).map_or(0, |i| (i + 1).min(u16::MAX as usize) as u16)
     }
     /// Line pitch: text height divided by lines per page.
     pub fn pitch(&self) -> f32 {
@@ -294,6 +309,9 @@ pub enum Item {
         y: f32,
         w: f32,
         h: f32,
+        /// Stacking order: the frame's place in `/Frame` (later on top).
+        #[serde(skip_serializing_if = "is_zero_u")]
+        z: u16,
     },
     Line {
         x1: f32,
@@ -331,6 +349,9 @@ pub enum Item {
         /// Shadow offset (pt) and colour.
         #[serde(skip_serializing_if = "Option::is_none")]
         shadow: Option<(f32, f32, String)>,
+        /// Stacking order (see `Image::z`).
+        #[serde(skip_serializing_if = "is_zero_u")]
+        z: u16,
     },
     /// Items laid out top to bottom in the box (x, y, w, h) of a page
     /// written across (a 縦書き text box): drawn turned a quarter turn, their
@@ -341,6 +362,9 @@ pub enum Item {
         w: f32,
         h: f32,
         items: Vec<Item>,
+        /// Stacking order (see `Image::z`).
+        #[serde(skip_serializing_if = "is_zero_u")]
+        z: u16,
     },
     /// Editing marks (編集記号): "ret" paragraph end, "sp" full-width space,
     /// "pb" page break, "tab".
@@ -519,7 +543,7 @@ impl<'a> Ctx<'a> {
             let rect = if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == id) {
                 Some((fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm, true, 0.0))
             } else {
-                setup.boxes.0.iter().find(|b| b.0 == id).map(|(_, fx, fy, fw, fh, _, _)| {
+                setup.boxes.0.iter().find(|b| b.0 == id).filter(|b| !(b.4 as f32 * mm >= (setup.bottom() - setup.top()) * 0.8 && b.3 as f32 * mm >= setup.text_w() * 0.8)).map(|(_, fx, fy, fw, fh, _, _)| {
                     let bw = *fw as f32 * mm;
                     let full = bw >= setup.text_w() * 0.9;
                     (*fx as f32 * mm, top + *fy as f32 * mm, bw, *fh as f32 * mm, full, if full { WRAP_GAP } else { 0.0 })
@@ -633,6 +657,20 @@ impl<'a> Ctx<'a> {
             flat: Vec::new(),
         });
         self.page = self.out.pages.len() - 1;
+        // the page background (背景): over the whole paper, under all else
+        let (ref colour, pic) = self.setup.background;
+        if colour.is_some() || pic {
+            let (w, h) = if self.setup.vertical { (self.setup.page_h(), self.setup.page_w()) } else { (self.setup.page_w(), self.setup.page_h()) };
+            let mut bg = Vec::new();
+            if let Some(c) = colour {
+                bg.push(Item::Rect { x: 0.0, y: 0.0, w, h, r: 0.0, lw: 0.0, color: c.clone(), dot: false, noline: true, fill: vec![(0.0, c.clone())], angle: 0.0, shadow: None, z: 0 });
+            }
+            if pic {
+                bg.push(Item::Image { id: crate::frames::BACKGROUND, x: 0.0, y: 0.0, w, h, z: 0 });
+            }
+            let pg = &mut self.out.pages[self.page];
+            if self.setup.vertical { pg.flat.extend(bg) } else { pg.items.extend(bg) }
+        }
         self.row = 0;
         self.y = self.setup.top();
         self.preregister();
@@ -669,7 +707,10 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
                     push_pre(&mut out, &r.style, txt);
                 }
             }
-            let size = r.style.size_pt.unwrap_or(base) * spread;
+            // 字間 is the cell less the base size, the same for every size: a
+            // 70 pt 卒業証書 keeps four characters in a box 4.02 of them long
+            let own = r.style.size_pt.unwrap_or(base);
+            let size = if spread > 1.0 { own + base * (spread - 1.0) } else { own * spread };
             let w = if ch == '\t' {
                 size * 4.0
             } else if is_half(ch) {
@@ -1447,6 +1488,10 @@ pub fn is_gothic(name: &str) -> bool {
         .any(|k| n.contains(k))
 }
 
+fn is_zero_u(v: &u16) -> bool {
+    *v == 0
+}
+
 fn is_zero_f(v: &f32) -> bool {
     *v == 0.0
 }
@@ -1571,7 +1616,7 @@ fn push_frames_at(ctx: &mut Ctx, ids: &[u16], top: f32, at_x: Option<f32>) {
         let (tl, top) = if vert { (px0, py0) } else { (tl, top) };
         if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
             let (x, y, w, h) = turn(tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
-            ctx.items().push(Item::Image { id: *id, x, y, w, h });
+            ctx.items().push(Item::Image { id: *id, x, y, w, h, z: setup.z_of(*id) });
             if setup.wrap.contains(id) && !ready {
                 ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h, true, *id));
             }
@@ -1593,7 +1638,10 @@ fn push_frames_at(ctx: &mut Ctx, ids: &[u16], top: f32, at_x: Option<f32>) {
                     ctx.items().push(it.moved(dx, dy));
                 }
             }
-            if setup.wrap.contains(id) && !ready {
+            // a box over most of the text area is the page's frame: the text
+            // runs inside it (a 学校便り's green border round the page)
+            let page_frame = bh >= (setup.bottom() - setup.top()) * 0.8 && bw >= setup.text_w() * 0.8;
+            if setup.wrap.contains(id) && !ready && !page_frame {
                 // a box across the whole column moves the text below it (the
                 // 持ち物 box of a B4 handout); a narrower one leaves the
                 // text over it where no room is beside it
@@ -1638,7 +1686,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
     // (checked on a school handout: sizes and texts agree box by box)
     for (k, f) in doc.frames.iter().filter(|f| f.kind == 2).enumerate() {
         let Some(b) = doc.boxes.get(k) else { continue };
-        if (b.blocks.is_empty() && !doc.pictures.iter().any(|p| p.layout == Some(b.layout))) || f.w == 0 || f.h == 0 {
+        if (b.blocks.is_empty() && b.border.is_none() && !doc.pictures.iter().any(|p| p.layout == Some(b.layout))) || f.w == 0 || f.h == 0 {
             continue;
         }
         let font = b.size_pt.unwrap_or(setup.font_pt).clamp(4.0, 100.0);
@@ -1673,7 +1721,8 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             margin_right_mm: width - bw + pr,
             margin_top_mm: pt,
             margin_bottom_mm: height - pt - pitch * n as f32 / MM,
-            chars_per_line: ((inner_w / font).floor() as u32).max(1),
+            // (a 48 pt line of ten characters in a box 9.98 characters long)
+            chars_per_line: ((inner_w / font + 0.05).floor() as u32).max(1),
             lines_per_page: n,
             font_pt: font,
             gothic: setup.gothic.clone(),
@@ -1701,7 +1750,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         for pic in doc.pictures.iter().filter(|p| p.layout == Some(b.layout) && !anchored.contains(&p.item)) {
             if let Some(g) = doc.frames.iter().find(|g| g.id == pic.item) {
                 let mm = MM / 100.0;
-                items.push(Item::Image { id: g.id, x: g.x as f32 * mm, y: g.y as f32 * mm, w: g.w as f32 * mm, h: g.h as f32 * mm });
+                items.push(Item::Image { id: g.id, x: g.x as f32 * mm, y: g.y as f32 * mm, w: g.w as f32 * mm, h: g.h as f32 * mm, z: setup.z_of(g.id) });
             }
         }
         if let Some(bd) = &b.border {
@@ -1718,6 +1767,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 fill: bd.fill.clone(),
                 angle: bd.angle,
                 shadow: bd.shadow.as_ref().map(|(x, y, c)| (x * MM, y * MM, c.clone())),
+                z: setup.z_of(f.id),
             });
         }
         items.extend(page
@@ -1730,7 +1780,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             })
             .cloned());
         let items = if upright {
-            vec![Item::Turned { x: 0.0, y: 0.0, w: f.w as f32 / 100.0 * MM, h: f.h as f32 / 100.0 * MM, items }]
+            vec![Item::Turned { x: 0.0, y: 0.0, w: f.w as f32 / 100.0 * MM, h: f.h as f32 / 100.0 * MM, items, z: setup.z_of(f.id) }]
         } else {
             items
         };

@@ -78,7 +78,9 @@ fn bgr(b: &[u8], o: usize) -> String {
 /// The outline at `q` (its type word) as SVG path data: the filled path and,
 /// when some edges are not stroked, the stroked one.
 fn outline(b: &[u8], q: usize, end: usize, out: &mut Out) -> Option<(String, Option<String>)> {
-    let t = le16(b, q)?;
+    // 0x63xx are the same outlines as 0x60xx (the petals of a 学校だより's
+    // flowers: polygons 0x6306)
+    let t = le16(b, q)? & 0xfcff;
     let l = be16(b, q + 2)? as usize;
     let lim = (q + l).min(end).min(b.len());
     match t {
@@ -216,9 +218,26 @@ fn figure_rec(b: &[u8], o: usize, depth: usize, out: &mut Out) {
                 }
             }
         }
-        0x6004 | 0x6006 | 0x6009 => {
+        // a line on its own: u16 width at +8, colour (00 BB GG RR) at +10
+        0x6004 | 0x6006 | 0x6009 | 0x6304 | 0x6306 | 0x6309 => {
             if let Some((d, e)) = outline(b, o + 2, end, out) {
-                let _ = write!(out.s, "<path d=\"{}\" fill=\"none\" stroke=\"#000\" stroke-width=\"8\"/>", e.unwrap_or(d));
+                let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(1, 400), bgr(b, o + 10));
+                let _ = write!(out.s, "<path d=\"{}\" fill=\"none\" stroke=\"{line}\" stroke-width=\"{lw}\" stroke-linejoin=\"round\"/>", e.unwrap_or(d));
+            }
+        }
+        // 6001: a straight line, x1 y1 x2 y2 from +16; 6005: an open
+        // line, u32 point count at +14, the points from +18
+        0x6001 | 0x6301 | 0x6005 | 0x6305 => {
+            let (lw, line) = (be16(b, o + 8).unwrap_or(8).clamp(1, 400), bgr(b, o + 10));
+            let (n, at) = if ty & 0xff == 0x01 { (2usize, o + 16) } else { (bei(b, o + 14).unwrap_or(0).clamp(0, 100_000) as usize, o + 18) };
+            if n >= 2 && at + 8 * n <= end {
+                out.cmds += n;
+                let mut d = String::new();
+                for i in 0..n {
+                    let (x, y) = (bei(b, at + 8 * i).unwrap_or(0), bei(b, at + 4 + 8 * i).unwrap_or(0));
+                    let _ = write!(d, "{}{x} {y}", if i == 0 { "M" } else { "L" });
+                }
+                let _ = write!(out.s, "<path d=\"{d}\" fill=\"none\" stroke=\"{line}\" stroke-width=\"{lw}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
             }
         }
         _ => {}
@@ -230,7 +249,11 @@ fn figure_box(b: &[u8], o: usize) -> Option<(i32, i32, i32, i32)> {
     let ty = le16(b, o + 2)?;
     match ty {
         0x600a | 0x600b => Some((bei(b, o + 20)?, bei(b, o + 24)?, bei(b, o + 28)?, bei(b, o + 32)?)),
-        0x6006 | 0x6009 => {
+        0x6001 | 0x6301 => {
+            let (x1, y1, x2, y2) = (bei(b, o + 16)?, bei(b, o + 20)?, bei(b, o + 24)?, bei(b, o + 28)?);
+            Some((x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2)))
+        }
+        0x6005 | 0x6305 | 0x6006 | 0x6009 | 0x6306 | 0x6309 => {
             let q = o + 2;
             let n = bei(b, q + 12)?.clamp(0, 100_000) as usize;
             let (mut x1, mut y1, mut x2, mut y2) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);

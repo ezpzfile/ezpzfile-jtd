@@ -275,6 +275,7 @@ impl PageStyle {
             col_gap_mm: mm(self.col_gap.min(10000)),
             rows: if two_up { 1 } else { self.rows.clamp(1, 2) },
             short_cols: false,
+            background: (None, false),
             ..PageSetup::default()
         }
     }

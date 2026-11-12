@@ -614,6 +614,23 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.9** Figures: outline and record types `63xx` are the `60xx` ones
+  (`6306` polygons: a 学校だより's flowers, carp streamers and boy).
+  `6001` is a straight line (u16 width at +8, colour `00 BB GG RR` at
+  +10, x1 y1 x2 y2 from +16), `6005` an open line (u32 count at +14,
+  points from +18); a bare `6006`/`6009` takes its width and colour from
+  the same places. `/HtmlAdditionalData` is the page background (背景):
+  u32 kind, u32, a UTF-16 path or `ffff`, a u32 0, then records `u16 tag,
+  u32 length, data` up to `fffe`: `0c` 1 colour / 3 picture, `0d` the
+  picture file (stretched over the paper), `10` the colour. Text boxes:
+  `6007` is u8 flags, (bit 0) u8, (bit 1) u16 line type; with the bit-0
+  byte, or when the first u32 of `0401` is 1500, the line shows only on a
+  filled box; corners are round only when that u32 is 150; line types 18
+  and 20 are dotted. Frames stack in `/Frame` order (later on top). A box
+  over most of the text area is the page's frame: text runs inside it.
+  字間 (the cell less the base size) is the same for every character size.
+  **observed**
+
 - **0.5.8** `1002` group 2 bit 0 = 1 is not 縦組み: 学校だより with a
   calendar in rows across the page have it, and their 縦書き comes from
   their text boxes (`6006` bit 0). A 縦書き box on a page written across is

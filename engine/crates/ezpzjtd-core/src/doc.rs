@@ -724,7 +724,16 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
         p
     });
     let frames = crate::frames::read_frames(&cfb, "");
-    let pictures = crate::frames::read_pictures(&cfb, &frames, limits.max_bytes);
+    let mut pictures = crate::frames::read_pictures(&cfb, &frames, limits.max_bytes);
+    let (bg_colour, bg_pic) = cfb.read("/HtmlAdditionalData").map(|b| crate::frames::background(&b)).unwrap_or((None, None));
+    let has_pic = bg_pic.is_some();
+    if let Some((mime, data)) = bg_pic.filter(|p| p.1.len() <= limits.max_bytes) {
+        pictures.push(crate::frames::Picture { item: crate::frames::BACKGROUND, mime, data, layout: None });
+    }
+    let page = page.map(|mut p| {
+        p.background = (bg_colour.clone(), has_pic);
+        p
+    });
     let boxes = if frames.iter().any(|f| f.kind == 2) { crate::frames::read_boxes(&cfb, &mut budget.style_left) } else { Vec::new() };
     Ok(Document {
         format,

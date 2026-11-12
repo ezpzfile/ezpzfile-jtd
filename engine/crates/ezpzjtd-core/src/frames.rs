@@ -318,6 +318,12 @@ struct BoxStyle {
     vertical: bool,
     size: Option<u32>,
     line: Option<u16>,
+    /// `6007` bit 0 (u8) present: such boxes show their line only when
+    /// filled (a 縦組み 学校だより: labels yes, its title and stars no)
+    line_u8: bool,
+    /// The first u32 of `0401`: 150 on boxes whose corners and lines show
+    /// as given, 1500 and 100 on others (their corners stay square)
+    kind: u32,
     /// radius, width, line colour, shadow x, shadow y, shadow colour
     shape: Option<(u32, u32, String, u32, u32, String)>,
     fill_type: u32,
@@ -371,9 +377,15 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                         let v = u32::from_be_bytes([b[q + 7], b[q + 8], b[q + 9], b[q + 10]]);
                         st.size = Some(v).filter(|v| (100..=10000).contains(v));
                     }
-                    // 6007: 02, u16 line type (1-8 seen on boxes with a line)
-                    if t == 0x6007 && l >= 3 && q + 7 <= end && b[q + 4] == 2 {
-                        st.line = Some(u16::from_be_bytes([b[q + 5], b[q + 6]]));
+                    // 6007: u8 flags, (bit 0) u8, (bit 1) u16 line type (1-8
+                    // seen on boxes with a line)
+                    if t == 0x6007 && l >= 3 && q + 4 + l <= end {
+                        let f = b[q + 4];
+                        let at = q + 5 + (f & 1) as usize;
+                        st.line_u8 = f & 1 != 0;
+                        if f & 2 != 0 && at + 2 <= q + 4 + l {
+                            st.line = Some(u16::from_be_bytes([b[at], b[at + 1]]));
+                        }
                     }
                 }
                 q += 4 + l;
@@ -392,6 +404,7 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                     (out.last_mut(), be32(o + 12), be32(o + 8), be32(o + 24), be32(o + 16), be32(o + 20), be32(o + 28))
                 {
                     st.shape = Some((r, w, col(c), sx, sy, col(sc)));
+                    st.kind = be32(o + 4).unwrap_or(0);
                 }
             }
             // 0403: u32 fill type (0 none, 1 one colour, 2 gradient), colour
@@ -441,12 +454,16 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
                 // line types seen against 一太郎ビューア: 1-4 dotted, 5 and 8
                 // solid, 6 none (an empty box round a picture), larger none;
                 // 4, 5 and 8 carry a shadow
-                let line = s.line.filter(|&l| matches!(l, 1..=5 | 8));
                 let fill: Vec<(f32, String)> = match s.fill_type {
                     1 => vec![(0.0, s.fill_color.clone())],
                     2 if !s.stops.is_empty() => s.stops.clone(),
                     _ => Vec::new(),
                 };
+                // (18 and 20: the dotted green and teal areas of a 学校だより)
+                let line = s.line.filter(|&l| matches!(l, 1..=5 | 8 | 18 | 20));
+                // a box of kind 1500 (a 卒業証書's, a 学校だより's title) or
+                // with the bit-0 byte shows its line only when it is filled
+                let line = line.filter(|_| !fill.is_empty() || (!s.line_u8 && s.kind != 1500));
                 if line.is_none() && fill.is_empty() {
                     return None;
                 }
@@ -455,8 +472,8 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
                 Some(Border {
                     color,
                     width_mm: (w as f32 / 100.0).clamp(0.1, 1.0),
-                    radius_mm: (r as f32 / 100.0).clamp(0.0, 20.0),
-                    dotted: line.is_some_and(|l| l <= 4),
+                    radius_mm: if s.kind == 150 { (r as f32 / 100.0).clamp(0.0, 20.0) } else { 0.0 },
+                    dotted: line.is_some_and(|l| if s.line_u8 { l == 2 } else { l <= 4 || l == 18 || l == 20 }),
                     line: line.is_some(),
                     fill,
                     angle: s.angle,
@@ -465,4 +482,57 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
             }),
         })
         .collect()
+}
+
+/// The frame id given to the page's background picture.
+pub const BACKGROUND: u16 = 0xfffe;
+
+/// The page background (背景) of `/HtmlAdditionalData`: a colour
+/// (`#rrggbb`) or a picture. The stream is u32 kind, u32, a UTF-16 path
+/// (u16, u32 length in characters, then the characters), `ffff` and a
+/// u32 0, then records `u16 tag, u32 length, data` up to tag `fffe`: `0c`
+/// u32 (1 colour, 3 picture), `0d` the picture file, `10` the colour
+/// (`00 BB GG RR`). Seen: a lavender 学校便り, an A3 卒業証書 whose gold
+/// border is a JPEG stretched over the paper.
+pub fn background(b: &[u8]) -> (Option<String>, Option<(&'static str, Vec<u8>)>) {
+    let mut o = 8usize;
+    let be16 = |o: usize| b.get(o..o + 2).map(|s| u16::from_be_bytes([s[0], s[1]]));
+    let be32 = |o: usize| b.get(o..o + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]));
+    // the path
+    match be16(o) {
+        Some(0xffff) => o += 6,
+        Some(_) => {
+            let n = be32(o + 2).unwrap_or(0) as usize;
+            o += 6 + 2 * n.min(4096);
+            if be16(o) == Some(0xffff) {
+                o += 6;
+            }
+        }
+        None => return (None, None),
+    }
+    let (mut kind, mut colour, mut pic) = (0u32, None, None);
+    let mut guard = 0;
+    while let (Some(t), Some(l)) = (be16(o), be32(o + 2)) {
+        guard += 1;
+        if t == 0xfffe || guard > 64 {
+            break;
+        }
+        let (d0, l) = (o + 6, l as usize);
+        let Some(d) = b.get(d0..d0.saturating_add(l)) else { break };
+        match t {
+            0x0c => kind = be32(d0).unwrap_or(0),
+            0x0d => {
+                let sigs: [(&[u8], &str); 4] = [(b"\x89PNG", "image/png"), (b"GIF8", "image/gif"), (b"\xff\xd8\xff", "image/jpeg"), (b"BM", "image/bmp")];
+                pic = sigs.iter().find(|(s, _)| d.starts_with(s)).map(|(_, m)| (*m, d.to_vec()));
+            }
+            0x10 if l >= 4 => colour = Some(format!("#{:02x}{:02x}{:02x}", d[3], d[2], d[1])),
+            _ => {}
+        }
+        o = d0 + l;
+    }
+    match kind {
+        3 => (None, pic),
+        1 => (colour, None),
+        _ => (None, None),
+    }
 }
