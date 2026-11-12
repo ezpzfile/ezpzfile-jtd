@@ -129,6 +129,9 @@ pub const MAX_LINES: usize = 400_000;
 /// 一太郎ビューア.
 const NEED_FIT: f32 = 0.95;
 
+/// A character cell in columns, in character sizes (see `layout_with`).
+const COL_CELL: f32 = 1.031;
+
 /// Text moved below a text box across the column keeps this far below it
 /// (一太郎ビューア on a B4 handout: the line after the 持ち物 box, which has a
 /// shadow, starts one line further down). Lines go right under a picture
@@ -643,7 +646,11 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
             let w = if ch == '\t' {
                 size * 4.0
             } else if is_half(ch) {
-                size / 2.0
+                // 字間 goes to full-width characters only: a half-width
+                // character (spaces that right-align a date line) is half the
+                // character size (一太郎ビューア: 55 half spaces and 10 full
+                // characters fit a 37-character line of a B4 handout)
+                r.style.size_pt.unwrap_or(base) * spread.min(1.0) / 2.0
             } else {
                 size
             };
@@ -1225,13 +1232,21 @@ pub fn layout_with(
     let (cols, col_w) = if col_w > full.font_pt * 2.0 { (cols, col_w) } else { (1, full.text_w()) };
     let mut one = full.clone();
     if cols > 1 {
-        one.margin_right_mm = (full.page_w() - full.left() - col_w) / MM;
-        // 字数 is per column; a count meant for the whole width (a B4
-        // handout: 83 characters, two columns) would squeeze the
-        // characters, so fit it to the column
-        if one.chars_per_line as f32 * full.font_pt > col_w * 1.05 {
-            one.chars_per_line = ((col_w / full.font_pt).floor() as u32).max(4);
-        }
+        // In columns a character takes its own cell, 1.031 of its size (4.0 mm
+        // for 11 pt in 一太郎ビューア on six B4 and A4 handouts), and a line
+        // holds 字数 cells from the column's left: a narrower 字数 leaves the
+        // rest of the column empty, and right-aligned lines end there. A
+        // 字数 meant for the whole width (a320: 83) is fitted to the column
+        // (41 there).
+        let cell = full.font_pt * COL_CELL;
+        let fit = (col_w / cell).round().max(4.0) as u32;
+        let line_w = if one.chars_per_line <= fit {
+            (one.chars_per_line as f32 * cell).min(col_w)
+        } else {
+            one.chars_per_line = fit;
+            col_w
+        };
+        one.margin_right_mm = (full.page_w() - full.left() - line_w) / MM;
     }
     let setup = &one;
     // two passes when frames fixed on the page wrap text: the first finds

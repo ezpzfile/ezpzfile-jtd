@@ -90,6 +90,10 @@ pub struct PageStyle {
     /// right), and frames fixed on the page are placed from the top of their
     /// half (一太郎ビューア, a320)
     pub rows: u32,
+    /// `1014` (00 00 04 ..): two pages on one landscape sheet. 一太郎ビューア
+    /// shows each half as its own page (栃木 school newsletters on A4
+    /// landscape with 2 段 in the style).
+    pub two_up: bool,
 }
 
 impl Default for PageStyle {
@@ -105,6 +109,7 @@ impl Default for PageStyle {
             columns: 1,
             col_gap: 0,
             rows: 1,
+            two_up: false,
         }
     }
 }
@@ -119,6 +124,7 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
     let mut s = PageStyle::default();
     for (tag, p) in recs {
         match tag {
+            0x1014 => s.two_up = p.get(2) == Some(&4),
             // paper: bit1 width, bit2 height (u32, 1/100 mm)
             0x1001 => {
                 if let Some((f, _)) = group(p, 0, [0, 4, 4, 1, 0, 1, 1, 0]) {
@@ -131,7 +137,9 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
             // right (u16, 1/100 mm), then group 3 bit 4 = 縦組み
             0x1002 => {
                 if let Some((_, i)) = group(p, 0, [0, 0, 0, 0, 2, 0, 0, 2]) {
-                    if let Some((f, i)) = group(p, i, [1, 0, 0, 2, 2, 2, 2, 2]) {
+                    // bit 2 is a u16 too (masks 0xbc, 0xfc on school newsletters written
+                    // vertically: read as unknown, their 縦組み was missed)
+                    if let Some((f, i)) = group(p, i, [1, 0, 2, 2, 2, 2, 2, 2]) {
                         for k in 0..4 {
                             if let Some(v) = f[3 + k] {
                                 s.margins[k] = v;
@@ -178,8 +186,13 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
             }
             // bit1 lines per page
             0x100d => {
-                if let Some((f, _)) = group(p, 0, [1, 2, 0, 0, 0, 0, 0, 0]) {
-                    if let Some(v) = f[1].filter(|&v| v > 0) {
+                // bit1 (u16) comes first whatever follows: bit5 is a list of
+                // line marks of unread size (0x22 on most school handouts, whose
+                // 行数 of 43 to 70 was read as the default 40)
+                if let Some(&m) = p.first().filter(|&&m| m & 0x02 != 0) {
+                    // bit0 is a u8 before it
+                    let at = 1 + (m & 0x01) as usize;
+                    if let Some(v) = u16_at(p, at).map(|v| v as u32).filter(|&v| v > 0) {
                         s.lines = v;
                     }
                 }
@@ -235,6 +248,11 @@ impl PageStyle {
             (d.margin_left_mm, d.margin_right_mm)
         };
         let font_pt = ((self.font as f32) / 35.2778 * 2.0).round() / 2.0;
+        // two pages on the sheet: each page is half the sheet, one column
+        let two_up = self.two_up && !self.vertical && w > h;
+        if two_up {
+            w /= 2.0;
+        }
         // 縦組み: lay out on the page turned a quarter turn. Its top is the
         // paper's right edge, its left the paper's top (see PageSetup::vertical).
         let (w, h, t, b, l, r) = if self.vertical { (h, w, r, l, t, b) } else { (w, h, t, b, l, r) };
@@ -253,9 +271,9 @@ impl PageStyle {
                 10.5
             },
             vertical: self.vertical,
-            columns: self.columns.clamp(1, 10),
+            columns: if two_up { 1 } else { self.columns.clamp(1, 10) },
             col_gap_mm: mm(self.col_gap.min(10000)),
-            rows: self.rows.clamp(1, 2),
+            rows: if two_up { 1 } else { self.rows.clamp(1, 2) },
             ..PageSetup::default()
         }
     }

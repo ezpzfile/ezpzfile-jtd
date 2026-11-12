@@ -614,6 +614,17 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.5** `100D`: bit1 (u16, 行数) is read whenever its bit is set
+  (bit0 is a u8 before it); bit5 is a list of line marks of unknown size
+  that made the whole record unreadable (mask 0x22: 43 to 70 lines read
+  as 40). `1002` group 2 bit2 is a u16 (masks 0xbc, 0xfc: 縦組み was
+  missed). In columns (`1002` group 3 bit1 = 1) a character cell is 1.031
+  of its size (4.0 mm for 11 pt) and a line holds 字数 cells from the
+  column's left; half-width characters take half their size with no 字間
+  (55 half spaces + 10 full characters fit a 37-character line). `1014`
+  with byte 2 = 4: two pages on one landscape sheet; 一太郎ビューア shows
+  each half as a page. **observed** (栃木・徳島 school documents)
+
 - **0.5.4** Frames fixed on the page (word [6] = 2) that text goes round
   are known before their anchors in 一太郎ビューア: lines above the anchor
   already go round them (a B4 handout's labels and route map). A first
