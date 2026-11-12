@@ -614,6 +614,14 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.8** `1002` group 2 bit 0 = 1 is not 縦組み: 学校だより with a
+  calendar in rows across the page have it, and their 縦書き comes from
+  their text boxes (`6006` bit 0). A 縦書き box on a page written across is
+  laid out as on a 縦組み page and drawn turned. `1001` with only a width
+  (an A3 landscape 卒業証書: 420 mm) keeps the default height (297 mm).
+  Empty paragraphs at the end that anchor frames are kept (a newsletter's
+  body boxes are anchored on the last lines). **observed**
+
 - **0.5.7** `0020` record word 2 is the 段 count less one (1 on two-段
   a320 and a162, 2 on three-段 玉東中便り, whose `1002` has no 段組).
   A paragraph holding only a `0020` record takes no height wherever it is

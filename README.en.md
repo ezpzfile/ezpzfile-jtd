@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.5.7, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.5.8, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.5.7, reader + editor that saves back to `.jtd` (developer preview).
 
 | Version | What changed |
 |---|---|
+| 0.5.8 | School newsletters written across were taken for vertical documents; fixed (event calendars lie across again). Vertical text boxes on pages written across are drawn vertically. Paper given only by its width (an A3 landscape certificate) gets its right size. Text boxes anchored on the last empty lines no longer disappear |
 | 0.5.7 | Vertical documents in three 段 (from the 段組 record at the start of the text), with as many characters per 段 line as Ichitaro Viewer. Ruled boxes round titles are drawn. Photos, boxes and figures in vertical text are placed from the character they are anchored on. Empty lines holding only a 段組 record take no height |
 | 0.5.6 | 段 of vertical documents shown stacked top and bottom. Text boxes read their writing direction (vertical or across) and character size (a school letter's body and title write top to bottom, its headings across). On vertical pages boxes are placed as on the paper |
 | 0.5.5 | 行数 (`100D`) is read even when a list of line marks follows it (school documents fell back to 40 lines). Vertical writing missed in some files is now detected. In columns a character cell is 1.031 of its size and a line holds 字数 cells. Half-width characters get no 字間. Two pages on one sheet (`1014`, A4 landscape) show as two pages |

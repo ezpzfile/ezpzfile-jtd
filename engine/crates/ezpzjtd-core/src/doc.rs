@@ -1399,7 +1399,7 @@ fn build_blocks(
     b.close_row();
     b.close_table();
     // drop trailing empty paragraphs
-    while b.blocks.len() > 1 && matches!(b.blocks.last(), Some(Block::Paragraph(p)) if p.is_empty())
+    while b.blocks.len() > 1 && matches!(b.blocks.last(), Some(Block::Paragraph(p)) if p.is_empty() && p.frames.is_empty())
     {
         b.blocks.pop();
     }

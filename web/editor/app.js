@@ -437,6 +437,13 @@ function paintItems(g, data, marks) {
     }
     g.restore();
   }
+  // 縦書き text boxes on a page written across: turned a quarter turn
+  for (const it of data.items) {
+    if (it.t !== "Turned") continue;
+    g.save(); g.translate(it.x, it.y); g.transform(0, 1, -1, 0, it.w, 0);
+    paintItems(g, { w: it.h, h: it.w, items: it.items, upright: true }, false);
+    g.restore();
+  }
   g.textBaseline = "alphabetic";
   for (const it of data.items) {
     if (it.t === "Text") {
@@ -753,7 +760,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.7")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.8")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */

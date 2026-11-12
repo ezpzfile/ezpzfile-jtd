@@ -128,8 +128,10 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
             // paper: bit1 width, bit2 height (u32, 1/100 mm)
             0x1001 => {
                 if let Some((f, _)) = group(p, 0, [0, 4, 4, 1, 0, 1, 1, 0]) {
-                    if let (Some(w), Some(h)) = (f[1], f[2]) {
-                        s.paper = (w, h);
+                    // one left out keeps its default (an A3 landscape 卒業証書
+                    // gives only its width, 420 mm)
+                    if f[1].is_some() || f[2].is_some() {
+                        s.paper = (f[1].unwrap_or(PAPER.0), f[2].unwrap_or(PAPER.1));
                     }
                 }
             }
@@ -145,11 +147,9 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
                                 s.margins[k] = v;
                             }
                         }
-                        // group 2 bit 0 (u8) 1: 縦組み in older files (school
-                        // handouts written vertically)
-                        if f[0] == Some(1) {
-                            s.vertical = true;
-                        }
+                        // (group 2 bit 0 (u8) is 1 on school letters written
+                        // across too: 学校だより with a calendar in rows, whose
+                        // 縦書き comes from their text boxes. Not 縦組み.)
                         // group 3: bit1 (u8) 段組 (1 or 2: two columns), bit4 (u8) 1 = 縦組み, bit6 ten u16: the
                         // gaps between columns (1/100 mm). The sizes of bits
                         // 0, 2, 3 and 5 are unknown, so stop at them.

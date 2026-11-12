@@ -332,6 +332,16 @@ pub enum Item {
         #[serde(skip_serializing_if = "Option::is_none")]
         shadow: Option<(f32, f32, String)>,
     },
+    /// Items laid out top to bottom in the box (x, y, w, h) of a page
+    /// written across (a 縦書き text box): drawn turned a quarter turn, their
+    /// layout x running down the box and y leftward from its right edge.
+    Turned {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        items: Vec<Item>,
+    },
     /// Editing marks (編集記号): "ret" paragraph end, "sp" full-width space,
     /// "pb" page break, "tab".
     Mark {
@@ -1603,7 +1613,7 @@ impl Item {
                 xs.iter_mut().for_each(|x| *x += dx);
                 *y += dy;
             }
-            Item::Image { x, y, .. } | Item::Mark { x, y, .. } | Item::Rect { x, y, .. } => {
+            Item::Image { x, y, .. } | Item::Mark { x, y, .. } | Item::Rect { x, y, .. } | Item::Turned { x, y, .. } => {
                 *x += dx;
                 *y += dy;
             }
@@ -1636,8 +1646,11 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         // top to bottom is laid out in layout terms (its height on the paper
         // is the line length); one writing across is laid out on the paper
         // as it is and drawn unturned (`flat`)
-        let turned = setup.vertical;
-        let flat = turned && !b.vertical;
+        // a 縦書き box on a page written across is laid out the same way
+        // and drawn turned (`Item::Turned`)
+        let upright = !setup.vertical && b.vertical;
+        let turned = setup.vertical || upright;
+        let flat = setup.vertical && !b.vertical;
         let [pl, pr, pt, pb] = b.pad.map(|v| v as f32 / 100.0);
         let (bw, bh) = (f.w as f32 / 100.0, f.h as f32 / 100.0);
         // paper (left, right, top, bottom) → layout (top, bottom, right, left)
@@ -1716,6 +1729,11 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 _ => true,
             })
             .cloned());
+        let items = if upright {
+            vec![Item::Turned { x: 0.0, y: 0.0, w: f.w as f32 / 100.0 * MM, h: f.h as f32 / 100.0 * MM, items }]
+        } else {
+            items
+        };
         out.push((f.id, f.x, f.y, f.w, f.h, items, flat));
     }
     out
