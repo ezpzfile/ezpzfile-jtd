@@ -74,6 +74,10 @@ pub struct PageSetup {
     pub columns: u32,
     #[serde(default)]
     pub col_gap_mm: f32,
+    /// The page cut across in halves, each with its own columns (see
+    /// `PageStyle::rows`)
+    #[serde(default = "one_col")]
+    pub rows: u32,
 }
 
 fn one_col() -> u32 {
@@ -109,6 +113,7 @@ impl Default for PageSetup {
             vertical: false,
             columns: 1,
             col_gap_mm: 0.0,
+            rows: 1,
         }
     }
 }
@@ -118,6 +123,16 @@ pub const MM: f32 = 72.0 / 25.4;
 /// Most laid-out lines in one sheet (each line carries its characters'
 /// positions). Far above real documents; see `limits.rs`.
 pub const MAX_LINES: usize = 400_000;
+/// How much of a pitch the tallest character may need and still take one
+/// pitch. 11 pt in an 11.6 pt pitch (A4, 65 lines) and 16 pt in a 15.7 pt
+/// pitch (B4 landscape, 42 lines: the a320 handout) both stay one pitch in
+/// 一太郎ビューア.
+const NEED_FIT: f32 = 0.95;
+
+/// Text moved below a frame keeps this far below it (一太郎ビューア on a B4
+/// handout: the line after the 持ち物 box starts one line further down).
+/// Lines beside a narrow text box start right under it.
+const WRAP_GAP: f32 = 4.0 * MM;
 
 fn is_plain_kind(k: &u8) -> bool {
     *k <= 1
@@ -175,6 +190,7 @@ impl PageSetup {
             vertical: self.vertical,
             columns: self.columns.clamp(1, 10),
             col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
+            rows: self.rows.clamp(1, 2),
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -394,21 +410,54 @@ struct Ctx<'a> {
     /// y2, and whether a line with no room beside it moves below it (a
     /// picture) or is set over it (a text box).
     wraps: Vec<(usize, u32, f32, f32, f32, f32, bool)>,
+    /// Halves of the page cut across (1 or 2) and the current one
+    rows: u32,
+    row: u32,
+    breaking: bool,
 }
 
 impl<'a> Ctx<'a> {
-    /// The next column, or the next page after the last column.
+    /// Top of the text in the current half. Each half is laid out like a
+    /// page of half the paper's height with the page's margins and line
+    /// pitch (a320: 19 lines a half, the lower half's first line 12 mm below
+    /// the middle of the paper).
+    fn top(&self) -> f32 {
+        self.paper_top() + self.setup.top()
+    }
+    /// Bottom of the text in the current half
+    fn bottom(&self) -> f32 {
+        if self.rows <= 1 {
+            self.setup.bottom()
+        } else {
+            self.paper_top() + self.setup.page_h() / self.rows as f32 - self.setup.margin_bottom_mm * MM
+        }
+    }
+    /// Where frames fixed on the page are measured from: the paper's top,
+    /// or the middle of the paper in the lower half
+    fn paper_top(&self) -> f32 {
+        self.row as f32 * self.setup.page_h() / self.rows.max(1) as f32
+    }
+
+    /// The next column, or the next half or page after the last column.
     fn new_page(&mut self) {
         if self.col + 1 < self.cols && !self.out.pages.is_empty() {
             self.col += 1;
             self.dx = self.col as f32 * self.col_step;
             let n = self.out.pages[self.page].items.len();
             self.segs.push((self.page, n, self.out.lines.len(), self.dx));
-            self.y = self.setup.top();
+            self.y = self.top();
             return;
         }
         self.col = 0;
         self.dx = 0.0;
+        if self.row + 1 < self.rows && !self.out.pages.is_empty() && self.col_was_used() {
+            self.row += 1;
+            self.y = self.top();
+            let n = self.out.pages[self.page].items.len();
+            self.segs.push((self.page, n, self.out.lines.len(), 0.0));
+            return;
+        }
+        self.row = 0;
         self.real_new_page();
         self.segs.push((self.page, self.out.pages[self.page].items.len(), self.out.lines.len(), 0.0));
     }
@@ -454,10 +503,17 @@ impl<'a> Ctx<'a> {
         }
     }
 
+    /// Always true: kept apart so a page break can skip the lower half
+    fn col_was_used(&self) -> bool {
+        !self.breaking
+    }
+
     /// A page break (改ページ): the next page, whatever column this is.
     fn break_page(&mut self) {
         self.col = self.cols;
+        self.breaking = true;
         self.new_page();
+        self.breaking = false;
     }
 
     /// Move each column's items and lines to their column.
@@ -498,6 +554,7 @@ impl<'a> Ctx<'a> {
             items: Vec::new(),
         });
         self.page = self.out.pages.len() - 1;
+        self.row = 0;
         self.y = self.setup.top();
     }
     fn items(&mut self) -> &mut Vec<Item> {
@@ -647,7 +704,7 @@ fn layout_para(
         && (ctx.wraps.iter().any(|w| w.0 == ctx.page) || p.frames.iter().any(|f| setup.wrap.contains(f)));
     let mut frames_done = false;
     if wrapping && !p.frames.is_empty() {
-        if ctx.y + pitch > setup.bottom() + 0.5 && ctx.y > setup.top() + 0.5 {
+        if ctx.y + pitch > ctx.bottom() + 0.5 && ctx.y > ctx.top() + 0.5 {
             ctx.new_page();
         }
         let y = ctx.y;
@@ -672,7 +729,11 @@ fn layout_para(
             }
             let (l0, r0) = if li == 0 { first } else { (left, right) };
             let mut lr = (l0, r0);
-            for _ in 0..64 {
+            // an empty line (or one of spaces) is not moved round frames:
+            // the lines under a handout's title pictures keep their places
+            // in 一太郎ビューア (a320: the line after them lands at 84 mm)
+            let tries = if gs.iter().all(|g| g.ch.is_whitespace()) { 0 } else { 64 };
+            for _ in 0..tries {
                 match ctx.free_span(l0, r0, ctx.y, ctx.y + pitch, (base * 3.0).min(r0 - l0)) {
                     Ok(sp) => {
                         lr = sp;
@@ -680,9 +741,9 @@ fn layout_para(
                     }
                     Err(low) => {
                         // the next line of the grid below the frame
-                        let top = setup.top();
+                        let top = ctx.top();
                         let y = top + ((low - top) / pitch).ceil().max(0.0) * pitch;
-                        if y + pitch > setup.bottom() + 0.5 {
+                        if y + pitch > ctx.bottom() + 0.5 {
                             ctx.new_page();
                         } else {
                             ctx.y = y.max(ctx.y + 0.01);
@@ -710,7 +771,9 @@ fn layout_para(
         // A line takes one pitch while its tallest character fits in it
         // (Ichitaro: 65 lines of 11 pt on A4 with 15 mm margins, a pitch of
         // 11.6 pt, stay one pitch each), else as many as it needs.
-        let need = max_size * 0.995 + if has_ruby { max_size * 0.5 } else { 0.0 };
+        // ruby half the size rides in the gap above (a B4 handout: 11 pt with
+        // ruby in a 15.7 pt pitch stays one pitch)
+        let need = max_size * NEED_FIT + if has_ruby { max_size * 0.4 } else { 0.0 };
         // whole line pitches that hold the tallest character (computed, not
         // counted up one pitch at a time: a tiny pitch made that loop run
         // millions of times per line)
@@ -723,7 +786,7 @@ fn layout_para(
         } else {
             need.max(1.0)
         };
-        if !in_cell && ctx.y + h > setup.bottom() + 0.5 && ctx.y > setup.top() + 0.5 {
+        if !in_cell && ctx.y + h > ctx.bottom() + 0.5 && ctx.y > ctx.top() + 0.5 {
             ctx.new_page();
         }
         let top = ctx.y;
@@ -963,6 +1026,9 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                 dx: 0.0,
                 segs: Vec::new(),
                 wraps: Vec::new(),
+                rows: 1,
+                row: 0,
+                breaking: false,
             };
             scratch.out.pages.push(Page {
                 w: 0.0,
@@ -991,7 +1057,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
             .and_then(|f| f.points(setup.pitch()))
             .unwrap_or(setup.pitch());
         let row_h = heights.iter().cloned().fold(one, f32::max);
-        if ctx.y + row_h > setup.bottom() + 0.5 && ctx.y > setup.top() + 0.5 {
+        if ctx.y + row_h > ctx.bottom() + 0.5 && ctx.y > ctx.top() + 0.5 {
             ctx.new_page();
         }
         let top = ctx.y;
@@ -1108,6 +1174,9 @@ pub fn layout_with(
         dx: 0.0,
         segs: Vec::new(),
         wraps: Vec::new(),
+        rows: if cols > 1 { full.rows.clamp(1, 2) } else { 1 },
+        row: 0,
+        breaking: false,
     };
     ctx.new_page();
     let mut flat = 0usize;
@@ -1123,7 +1192,7 @@ pub fn layout_with(
         }
         match b {
             Block::Paragraph(p) => {
-                if p.page_break_before && ctx.y > setup.top() + 0.5 {
+                if p.page_break_before && ctx.y > ctx.top() + 0.5 {
                     if show_marks {
                         let y = ctx.y - setup.pitch() * 0.3;
                         let (l, r) = (setup.left(), setup.left() + setup.text_w());
@@ -1248,7 +1317,7 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
         // with 一太郎ビューア on a handout with A4 margins of 20 and 17 mm), and
         // stays where it is whatever column anchors it
         let fixed = setup.fixed.contains(id);
-        let top = if fixed { 0.0 } else { top };
+        let top = if fixed { ctx.paper_top() } else { top };
         let tl = if fixed { -ctx.dx } else { tl };
         // 縦組み: a frame on the page is given on the paper as it is; the
         // layout page is the paper turned a quarter turn
@@ -1263,7 +1332,7 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
             let (x, y, w, h) = turn(tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
             ctx.items().push(Item::Image { id: *id, x, y, w, h });
             if setup.wrap.contains(id) {
-                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h, true));
+                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h + WRAP_GAP, true));
             }
         }
         if let Some((_, fx, fy, fw, fh, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
@@ -1274,7 +1343,11 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
                 ctx.items().push(it.moved(dx, dy));
             }
             if setup.wrap.contains(id) {
-                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh, false));
+                // a box across the whole column moves the text below it (the
+                // 持ち物 box of a B4 handout); a narrower one leaves the
+                // text over it where no room is beside it
+                let full = bw >= (setup.text_w() * 0.9).min(ctx.col_step.max(setup.text_w()));
+                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh + if full { WRAP_GAP } else { 0.0 }, full));
             }
         }
     }

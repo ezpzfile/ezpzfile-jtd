@@ -85,6 +85,11 @@ pub struct PageStyle {
     /// 段組: columns and the gap between them (1/100 mm)
     pub columns: u32,
     pub col_gap: u32,
+    /// 段組 2 on a B4 handout: the page is also cut across in two halves,
+    /// each with its columns (top left, top right, bottom left, bottom
+    /// right), and frames fixed on the page are placed from the top of their
+    /// half (一太郎ビューア, a320)
+    pub rows: u32,
 }
 
 impl Default for PageStyle {
@@ -99,6 +104,7 @@ impl Default for PageStyle {
             vertical: false,
             columns: 1,
             col_gap: 0,
+            rows: 1,
         }
     }
 }
@@ -146,6 +152,7 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
                                     // 1 on a two-card memo form and 2 on a B4 handout, both
                                     // in two columns in 一太郎ビューア; three columns not seen yet
                                     s.columns = if p.get(j).is_some_and(|&c| c >= 1) { 2 } else { 1 };
+                                    s.rows = if p.get(j) == Some(&2) { 2 } else { 1 };
                                     j += 1;
                                 }
                                 if m & 0x10 != 0 {
@@ -248,6 +255,7 @@ impl PageStyle {
             vertical: self.vertical,
             columns: self.columns.clamp(1, 10),
             col_gap_mm: mm(self.col_gap.min(10000)),
+            rows: self.rows.clamp(1, 2),
             ..PageSetup::default()
         }
     }

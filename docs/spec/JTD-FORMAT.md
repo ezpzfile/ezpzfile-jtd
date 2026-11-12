@@ -614,6 +614,17 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.3** `1002` group 3 bit 1 = 2 (a B4 landscape handout): two columns
+  and the page cut across in halves. Each half is laid out like a page of
+  half the paper's height with the page's margins and pitch (19 lines a
+  half there); text runs top left, top right, bottom left, bottom right,
+  and frames fixed on the page (word [6] = 2) anchored in the lower half
+  are measured from the middle of the paper. Empty lines and lines of
+  spaces do not move round frames. A text box as wide as the column pushes
+  the text below it, 4 mm clear. A character of 0.95 of the pitch or less
+  (16 pt in 15.7 pt) and ruby of 0.4 of the size stay one pitch.
+  **observed**
+
 - **0.5.2** `/LayoutBox` `6006` is u8 flags then u16 left, right, top, bottom
   (1/100 mm). `0401` #4 and #5 are the shadow's offset and #7 its colour
   (types 4, 5, 8 show one; 4 dotted like its line). `0403` u32 fill type (1
