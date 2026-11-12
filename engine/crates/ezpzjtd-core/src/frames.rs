@@ -244,6 +244,27 @@ mod tests {
     }
 
     #[test]
+    fn box_direction_and_size() {
+        // 0201 box; 6668 group with 6006 (flags 0d: direction 1, left and
+        // right 1 mm) and 6004 (character size 11.99 mm)
+        let mut b = vec![0u8; 8];
+        b.extend_from_slice(&[0x02, 0x01, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let recs: Vec<u8> = [
+            vec![0x60, 0x06, 0, 6, 0x0d, 1, 0, 100, 0, 100],
+            vec![0x60, 0x04, 0, 7, 3, 1, 0xff, 0, 0, 0x04, 0xaf],
+        ]
+        .concat();
+        b.extend_from_slice(&[0x66, 0x68, 0, 0]);
+        b.extend_from_slice(&(recs.len() as u16).to_be_bytes());
+        b.extend_from_slice(&recs);
+        let st = box_styles(&b);
+        assert_eq!(st.len(), 1);
+        assert!(st[0].vertical);
+        assert_eq!(st[0].pad, [100, 100, 0, 0]);
+        assert_eq!(st[0].size, Some(1199));
+    }
+
+    #[test]
     fn anchor_record() {
         assert_eq!(anchor_id(&[0, 0x30, 0xffff, 0x507, 0x12, 5, 0]), Some(5));
         assert_eq!(anchor_id(&[0, 0x31, 0xffff, 0x507, 0x12, 5, 0]), None);
@@ -261,6 +282,10 @@ pub struct TextBox {
     pub border: Option<Border>,
     /// The box's layout number (its index in the `/LayoutBoxText` directory).
     pub layout: u32,
+    /// The box writes top to bottom (縦書き; `6006` bit 0 holds 1).
+    pub vertical: bool,
+    /// The box's character size in pt (`6004`), when given.
+    pub size_pt: Option<f32>,
 }
 
 /// A text box's frame line (`/LayoutBox` records `6007` and `0401`).
@@ -285,6 +310,8 @@ pub struct Border {
 #[derive(Default)]
 struct BoxStyle {
     pad: [u16; 4],
+    vertical: bool,
+    size: Option<u32>,
     line: Option<u16>,
     /// radius, width, line colour, shadow x, shadow y, shadow colour
     shape: Option<(u32, u32, String, u32, u32, String)>,
@@ -313,10 +340,31 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
             while q + 4 <= end {
                 let t = u16::from_be_bytes([b[q], b[q + 1]]);
                 let l = u16::from_be_bytes([b[q + 2], b[q + 3]]) as usize;
-                let v = |k: usize| u16::from_be_bytes([b[q + 5 + k * 2], b[q + 6 + k * 2]]);
                 if let Some(st) = out.last_mut() {
-                    if t == 0x6006 && l >= 9 && q + 13 <= end {
-                        st.pad = [v(0), v(1), v(2), v(3)].map(|x| x.min(3000));
+                    // 6006: u8 flags, then (bit 0) u8 writing direction
+                    // (1 = 縦書き; the body box of a 縦組み 学校だより) and
+                    // (bits 2-5) u16 left, right, top, bottom
+                    if t == 0x6006 && l >= 1 && q + 4 + l <= end {
+                        let f = b[q + 4];
+                        let mut p = q + 5;
+                        if f & 1 != 0 {
+                            st.vertical = b[p] == 1;
+                            p += 1;
+                        }
+                        if f & 2 == 0 {
+                            for k in 0..4 {
+                                if f & (4 << k) != 0 && p + 2 <= q + 4 + l {
+                                    st.pad[k] = u16::from_be_bytes([b[p], b[p + 1]]).min(3000);
+                                    p += 2;
+                                }
+                            }
+                        }
+                    }
+                    // 6004: 03, u8, ff, then u32 the character size in
+                    // 1/100 mm (370 for 10.5 pt; 1199 for a 34 pt 学校だより)
+                    if t == 0x6004 && l >= 7 && q + 11 <= end && b[q + 4] == 3 {
+                        let v = u32::from_be_bytes([b[q + 7], b[q + 8], b[q + 9], b[q + 10]]);
+                        st.size = Some(v).filter(|v| (100..=10000).contains(v));
                     }
                     // 6007: 02, u16 line type (1-8 seen on boxes with a line)
                     if t == 0x6007 && l >= 3 && q + 7 <= end && b[q + 4] == 2 {
@@ -381,6 +429,9 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
             layout: *layout,
             blocks: crate::doc::blocks_from_textv(s, style_budget).unwrap_or_default(),
             pad: styles.get(i).map_or([200, 200, 100, 100], |s| s.pad),
+            vertical: styles.get(i).is_some_and(|s| s.vertical),
+            // to the nearest half point (3.69 mm is 10.5 pt)
+            size_pt: styles.get(i).and_then(|s| s.size).map(|v| (v as f32 / 100.0 * 72.0 / 25.4 * 2.0).round() / 2.0),
             border: styles.get(i).and_then(|s| {
                 // line types seen against 一太郎ビューア: 1-4 dotted, 5 and 8
                 // solid, 6 none (an empty box round a picture), larger none;

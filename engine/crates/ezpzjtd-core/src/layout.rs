@@ -335,6 +335,10 @@ pub struct Page {
     pub w: f32,
     pub h: f32,
     pub items: Vec<Item>,
+    /// 縦組み only: items given on the paper as it is (not turned), such as
+    /// the text of a box that writes across on a 縦組み page.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub flat: Vec<Item>,
 }
 
 /// One laid-out line, used for caret placement and hit testing.
@@ -493,7 +497,7 @@ impl<'a> Ctx<'a> {
             let rect = if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == id) {
                 Some((fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm, true, 0.0))
             } else {
-                setup.boxes.0.iter().find(|b| b.0 == id).map(|(_, fx, fy, fw, fh, _)| {
+                setup.boxes.0.iter().find(|b| b.0 == id).map(|(_, fx, fy, fw, fh, _, _)| {
                     let bw = *fw as f32 * mm;
                     let full = bw >= setup.text_w() * 0.9;
                     (*fx as f32 * mm, top + *fy as f32 * mm, bw, *fh as f32 * mm, full, if full { WRAP_GAP } else { 0.0 })
@@ -604,6 +608,7 @@ impl<'a> Ctx<'a> {
             w: self.setup.page_w(),
             h: self.setup.page_h(),
             items: Vec::new(),
+            flat: Vec::new(),
         });
         self.page = self.out.pages.len() - 1;
         self.row = 0;
@@ -1114,6 +1119,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                 w: 0.0,
                 h: 0.0,
                 items: Vec::new(),
+                flat: Vec::new(),
             });
             let mut h = 0.0;
             for (pi, p) in c.paragraphs.iter().enumerate() {
@@ -1226,7 +1232,9 @@ pub fn layout_with(
     // 段組: lay out in the first column, each column as wide as Ichitaro
     // makes it (the text width less the gaps, shared out), then move the
     // later columns over
-    let cols = if full.vertical { 1 } else { full.columns.clamp(1, 10) };
+    // 縦組み: the layout page is the paper turned, so columns across it are
+    // the 段 stacked top and bottom on the paper (a162 ともだち通信: two 段)
+    let cols = full.columns.clamp(1, 10);
     let gap = full.col_gap_mm.clamp(0.0, 100.0) * MM;
     let col_w = (full.text_w() - gap * (cols - 1) as f32) / cols as f32;
     let (cols, col_w) = if col_w > full.font_pt * 2.0 { (cols, col_w) } else { (1, full.text_w()) };
@@ -1291,7 +1299,7 @@ fn layout_pass(
         segs: Vec::new(),
         wraps: Vec::new(),
         own: Vec::new(),
-        rows: if cols > 1 { full.rows.clamp(1, 2) } else { 1 },
+        rows: if cols > 1 && !full.vertical { full.rows.clamp(1, 2) } else { 1 },
         row: 0,
         breaking: false,
         pre_frames,
@@ -1417,7 +1425,7 @@ pub fn face_class(name: &str) -> u8 {
 /// Laid-out text boxes shared between copies of a setup (see
 /// [`PageSetup::boxes`]).
 #[derive(Debug, Clone, Default)]
-pub struct Boxes(pub std::sync::Arc<Vec<(u16, i32, i32, u32, u32, Vec<Item>)>>);
+pub struct Boxes(pub std::sync::Arc<Vec<(u16, i32, i32, u32, u32, Vec<Item>, bool)>>);
 
 impl PartialEq for Boxes {
     fn eq(&self, o: &Self) -> bool {
@@ -1445,13 +1453,21 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
         let tl = if fixed { -ctx.dx } else { tl };
         // 縦組み: a frame on the page is given on the paper as it is; the
         // layout page is the paper turned a quarter turn
+        // (one floating in the text is measured from the text area's top
+        // left on the paper: the 学校だより scroll of a 縦組み handout). The
+        // column's shift along the layout page is taken back, as the
+        // column's items are moved by it afterwards
+        let vert = setup.vertical;
+        let (px0, py0) = if fixed { (0.0, 0.0) } else { (setup.margin_bottom_mm * MM, setup.margin_left_mm * MM) };
+        let dx = ctx.dx;
         let turn = |x: f32, y: f32, w: f32, h: f32| {
-            if fixed && setup.vertical {
-                (y, setup.page_h() - (x + w), h, w)
+            if vert {
+                (y - dx, setup.page_h() - (x + w), h, w)
             } else {
                 (x, y, w, h)
             }
         };
+        let (tl, top) = if vert { (px0, py0) } else { (tl, top) };
         if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
             let (x, y, w, h) = turn(tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
             ctx.items().push(Item::Image { id: *id, x, y, w, h });
@@ -1459,12 +1475,22 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
                 ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h, true, *id));
             }
         }
-        if let Some((_, fx, fy, fw, fh, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
-            // (a box's own writing direction is not read yet: its text is
-            // laid out across, from the frame's place in layout terms)
-            let (dx, dy, bw, bh) = (tl + *fx as f32 * mm, top + *fy as f32 * mm, *fw as f32 * mm, *fh as f32 * mm);
-            for it in items {
-                ctx.items().push(it.moved(dx, dy));
+        if let Some((_, fx, fy, fw, fh, items, flat)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
+            // 縦組み: a fixed box is placed on the paper and turned like a
+            // picture; its text was laid out for that (see `box_items`)
+            let (dx, dy, bw, bh) = turn(tl + *fx as f32 * mm, top + *fy as f32 * mm, *fw as f32 * mm, *fh as f32 * mm);
+            if *flat {
+                // a box writing across on a 縦組み page: its items are on the
+                // paper, from the box's top left there
+                let (px, py) = (setup.page_h() - (dy + bh), dx + ctx.dx);
+                for it in items {
+                    let m = it.moved(px, py);
+                    ctx.out.pages[ctx.page].flat.push(m);
+                }
+            } else {
+                for it in items {
+                    ctx.items().push(it.moved(dx, dy));
+                }
             }
             if setup.wrap.contains(id) && !ready {
                 // a box across the whole column moves the text below it (the
@@ -1505,7 +1531,7 @@ impl Item {
 /// the box's own margins, the document's character size and faces, one
 /// character per cell and a line pitch of 1.25 characters (the box keeps as
 /// many whole lines as fit, at least one). Text past the box is cut off.
-pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32, i32, u32, u32, Vec<Item>)> {
+pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32, i32, u32, u32, Vec<Item>, bool)> {
     let mut out = Vec::new();
     // the k-th text-box frame of /Frame shows the k-th box of /LayoutBoxText
     // (checked on a school handout: sizes and texts agree box by box)
@@ -1514,9 +1540,17 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         if (b.blocks.is_empty() && !doc.pictures.iter().any(|p| p.layout == Some(b.layout))) || f.w == 0 || f.h == 0 {
             continue;
         }
-        let font = setup.font_pt.clamp(4.0, 100.0);
+        let font = b.size_pt.unwrap_or(setup.font_pt).clamp(4.0, 100.0);
+        // 縦組み page: a box is placed turned on the paper. A box writing
+        // top to bottom is laid out in layout terms (its height on the paper
+        // is the line length); one writing across is laid out on the paper
+        // as it is and drawn unturned (`flat`)
+        let turned = setup.vertical;
+        let flat = turned && !b.vertical;
         let [pl, pr, pt, pb] = b.pad.map(|v| v as f32 / 100.0);
         let (bw, bh) = (f.w as f32 / 100.0, f.h as f32 / 100.0);
+        // paper (left, right, top, bottom) → layout (top, bottom, right, left)
+        let (pl, pr, pt, pb, bw, bh) = if turned && !flat { (pt, pb, pr, pl, bh, bw) } else { (pl, pr, pt, pb, bw, bh) };
         let inner_w = (bw - pl - pr).max(1.0) * MM;
         let inner_h = (bh - pt - pb).max(1.0) * MM;
         // line pitch 1.25 characters (a handout's box: seven lines of
@@ -1591,7 +1625,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 _ => true,
             })
             .cloned());
-        out.push((f.id, f.x, f.y, f.w, f.h, items));
+        out.push((f.id, f.x, f.y, f.w, f.h, items, flat));
     }
     out
 }

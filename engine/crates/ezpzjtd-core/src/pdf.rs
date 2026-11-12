@@ -221,6 +221,7 @@ mod tests {
                 color: None,
                 pre: false,
             }],
+            flat: Vec::new(),
         };
         let pdf = to_pdf(&[page], &[], "テスト");
         let s = String::from_utf8_lossy(&pdf);

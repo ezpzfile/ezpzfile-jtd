@@ -614,6 +614,17 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.6** `/LayoutBox` `6006`: u8 flags, then (bit0) u8 writing
+  direction, 1 = 縦書き (a 縦組み 学校だより's body, title and school name
+  boxes; boxes without it write across), then (bits 2-5) u16 left, right,
+  top, bottom margins. `6004`: `03`, u8, `ff`, then u32 the box's
+  character size in 1/100 mm (370 = 10.5 pt, 1199 = a 34 pt title).
+  On a 縦組み page a box is placed on the paper and turned: a 縦書き box
+  is laid out like the body, one writing across is drawn on the paper as
+  it is. A frame floating in 縦組み text is measured from the text area's
+  top left on the paper. 縦組み 段 (columns across the layout page) are
+  stacked top and bottom on the paper. **observed** (school handouts)
+
 - **0.5.5** `100D`: bit1 (u16, 行数) is read whenever its bit is set
   (bit0 is a u8 before it); bit5 is a list of line marks of unknown size
   that made the whole record unreadable (mask 0x22: 43 to 70 lines read
