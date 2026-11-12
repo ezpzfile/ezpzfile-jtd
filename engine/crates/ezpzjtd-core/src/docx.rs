@@ -315,14 +315,18 @@ pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> 
         tw(setup.left()),
         tw(setup.page_w() - setup.left() - setup.text_w()),
     );
+    let (top, bottom) = (tw(setup.top()), tw(setup.page_h() - setup.bottom()));
+    // 縦組み: the layout page is turned a quarter turn; Word gets the paper as it is
+    // and writes the text top to bottom, right to left
+    let (pw, ph, mt, mr, mb, ml, dir) = if setup.vertical {
+        (tw(setup.page_h()), tw(setup.page_w()), l, top, r, bottom, "<w:textDirection w:val=\"tbRl\"/>")
+    } else {
+        (tw(setup.page_w()), tw(setup.page_h()), top, r, bottom, l, "")
+    };
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
 <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}\
-<w:sectPr><w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{r}\" w:bottom=\"{}\" w:left=\"{l}\" w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/><w:docGrid w:type=\"lines\" w:linePitch=\"{}\"/></w:sectPr></w:body></w:document>",
-        tw(setup.page_w()),
-        tw(setup.page_h()),
-        tw(setup.top()),
-        tw(setup.page_h() - setup.bottom()),
+<w:sectPr><w:pgSz w:w=\"{pw}\" w:h=\"{ph}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\" w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/>{dir}<w:docGrid w:type=\"lines\" w:linePitch=\"{}\"/></w:sectPr></w:body></w:document>",
         tw(setup.pitch()),
     )
 }

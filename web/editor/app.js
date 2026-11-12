@@ -189,10 +189,37 @@ const observer = new IntersectionObserver((ents) => {
   }
 }, { root: null, rootMargin: "600px 0px" });
 
+/** 縦組み: the engine lays the page out turned a quarter turn; we turn it back. */
+function isVertical() {
+  const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
+  return !!setup.vertical;
+}
+/** A page as drawn: in 縦組み its width and height are the paper's (the items stay in layout coordinates). */
+function pageData(i) {
+  const data = JSON.parse(S.ed.pageJson(i));
+  if (!data || !isVertical()) return data;
+  return { ...data, w: data.h, h: data.w, vertical: true };
+}
+/** Layout box (x, y, w, h) → box on the drawn page (縦組み turns it a quarter turn). */
+function toPage(x, y, w, h) {
+  if (!isVertical()) return { x, y, w, h };
+  const Wp = (S.setup.height_mm * 72) / 25.4;
+  return { x: Wp - (y + h), y: x, w: h, h: w };
+}
+/** A point on the drawn page → layout coordinates. */
+function fromPage(x, y) {
+  if (!isVertical()) return { x, y };
+  const Wp = (S.setup.height_mm * 72) / 25.4;
+  return { x: y, y: Wp - x };
+}
+// characters that keep turning with the line in 縦組み (long vowel, dashes, brackets, arrows)
+const TURNS = new Set(Array.from("ー－―‐～〜…‥（）［］｛｝「」『』【】〔〕〈〉《》＜＞→←⇒＝"));
+const SMALL_MARKS = new Set(Array.from("、。，．"));
+
 function drawPage(i) {
   const pg = S.pages[i];
   if (!pg) return;
-  const data = JSON.parse(S.ed.pageJson(i));
+  const data = pageData(i);
   if (!data) return;
   const s = scale();
   const dpr = window.devicePixelRatio || 1;
@@ -276,6 +303,14 @@ function dropPictures() {
 }
 function paintItems(g, data, marks) {
   const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
+  if (data.vertical) {
+    // turn the layout back: layout x runs down the page, layout y from the right edge
+    g.save();
+    g.transform(0, 1, -1, 0, data.w, 0);
+    paintItems(g, { ...data, vertical: false, upright: true }, marks);
+    g.restore();
+    return;
+  }
   if (marks) {
     // text-area corner marks (like most Japanese word processors)
     const mm = 72 / 25.4, A = textArea(setup);
@@ -291,7 +326,11 @@ function paintItems(g, data, marks) {
   for (const it of data.items) {
     if (it.t !== "Image") continue;
     const img = picture(it.id);
-    if (img && img.complete && img.naturalWidth) g.drawImage(img, it.x, it.y, it.w, it.h);
+    if (!(img && img.complete && img.naturalWidth)) continue;
+    if (data.upright) {
+      g.save(); g.translate(it.x + it.w / 2, it.y + it.h / 2); g.rotate(-Math.PI / 2);
+      g.drawImage(img, -it.h / 2, -it.w / 2, it.h, it.w); g.restore();
+    } else g.drawImage(img, it.x, it.y, it.w, it.h);
   }
   g.textBaseline = "alphabetic";
   for (const it of data.items) {
@@ -303,6 +342,16 @@ function paintItems(g, data, marks) {
         const ch = chars[k];
         const half = ch.charCodeAt(0) < 0x2000 || (ch >= "｡" && ch <= "ﾟ");
         const x = it.xs[k];
+        if (data.upright && !half && !TURNS.has(ch)) {
+          // 縦組み: stand the character up in its cell; 、。 sit at the cell's top right
+          const z = it.size, cx = x + z / 2, cy = it.y - z * 0.38;
+          g.save(); g.translate(cx, cy); g.rotate(-Math.PI / 2);
+          const w = g.measureText(ch).width;
+          if (SMALL_MARKS.has(ch)) g.fillText(ch, -w / 2 + z * 0.55, z * 0.38 - z * 0.55);
+          else g.fillText(ch, -w / 2, z * 0.38);
+          g.restore();
+          continue;
+        }
         if (half) {
           // Half-width cell: centre narrow glyphs, squeeze wide ones (W, M, …)
           // so text keeps the monospaced grid look of Ichitaro.
@@ -341,16 +390,27 @@ function drawOverlays() {
   $$(".page .sel").forEach((e) => e.remove());
   for (const r of JSON.parse(S.ed.selectionJson())) {
     const pg = S.pages[r.page]; if (!pg) continue;
-    pg.div.append(el("div", { class: "sel", style: `left:${r.x * s}px;top:${r.y * s}px;width:${r.w * s}px;height:${r.h * s}px` }));
+    const b = toPage(r.x, r.y, r.w, r.h);
+    pg.div.append(el("div", { class: "sel", style: `left:${b.x * s}px;top:${b.y * s}px;width:${b.w * s}px;height:${b.h * s}px` }));
   }
   const caret = $("#caret");
   const c = JSON.parse(S.ed.caretJson());
   const st = S.status;
   if (!c || !S.pages[c.page] || (st && st.has_selection)) { caret.hidden = true; placeIme(c); return; }
   const pg = S.pages[c.page].div;
-  const x = pg.offsetLeft + c.x * s, y = pg.offsetTop + c.y * s;
   caret.hidden = S.composing;
   caret.className = st && st.overwrite ? "ovr" : "ins";
+  if (isVertical()) {
+    // a horizontal bar across the column
+    const b = toPage(c.x, c.y, 0, c.h);
+    const x = pg.offsetLeft + b.x * s, y = pg.offsetTop + b.y * s;
+    caret.style.left = x + "px"; caret.style.top = (y - 1) + "px";
+    caret.style.width = c.h * s + "px"; caret.style.height = (st && st.overwrite ? Math.max(2, 10.5 * s) : 2) + "px";
+    caret.style.animation = "none"; void caret.offsetWidth; caret.style.animation = "";
+    placeIme(c, x, y, c.h * s);
+    return;
+  }
+  const x = pg.offsetLeft + c.x * s, y = pg.offsetTop + c.y * s;
   caret.style.left = (st && st.overwrite ? x : x - 1) + "px";
   caret.style.top = y + "px";
   caret.style.height = c.h * s + "px";
@@ -372,7 +432,8 @@ function scrollCaretIntoView() {
   const c = JSON.parse(S.ed.caretJson());
   if (!c || !S.pages[c.page]) return;
   const s = scale(), pg = S.pages[c.page].div;
-  const y = pg.offsetTop + c.y * s, h = c.h * s, x = pg.offsetLeft + c.x * s;
+  const b = toPage(c.x, c.y, 0, c.h);
+  const y = pg.offsetTop + b.y * s, h = Math.max(b.h, 12) * s, x = pg.offsetLeft + b.x * s;
   if (y < sc.scrollTop + 8) sc.scrollTop = y - 40;
   else if (y + h > sc.scrollTop + sc.clientHeight - 8) sc.scrollTop = y + h - sc.clientHeight + 40;
   if (x < sc.scrollLeft) sc.scrollLeft = x - 40;
@@ -385,7 +446,8 @@ function refresh({ all = false, scroll = true } = {}) {
   ensurePages();
   const s = scale();
   const setup = S.setup || (S.setup = JSON.parse(S.ed.setupJson()));
-  const mm = 72 / 25.4, W = Math.round(setup.width_mm * mm * s) + "px", H = Math.round(setup.height_mm * mm * s) + "px";
+  const mm = 72 / 25.4, vert = !!setup.vertical;
+  const W = Math.round((vert ? setup.height_mm : setup.width_mm) * mm * s) + "px", H = Math.round((vert ? setup.width_mm : setup.height_mm) * mm * s) + "px";
   for (const pg of S.pages) {
     pg.dirty = true; // layout may have changed anywhere; only visible pages are redrawn now
     if (pg.div.style.width !== W) { pg.div.style.width = W; pg.div.style.height = H; }
@@ -482,7 +544,7 @@ const thumbObserver = new IntersectionObserver((ents) => {
 }, { root: null, rootMargin: "200px" });
 function drawThumb(li) {
   const i = +li.dataset.page;
-  const data = JSON.parse(S.ed.pageJson(i));
+  const data = pageData(i);
   if (!data) return;
   const c = $("canvas", li), w = c.clientWidth || 172, dpr = window.devicePixelRatio || 1;
   const k = w / data.w;
@@ -582,7 +644,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.5")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.6")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -1010,7 +1072,9 @@ function onKeyDown(e) {
   const word = (IS_MAC && e.altKey) || (!IS_MAC && e.ctrlKey);
   const line = IS_MAC && e.metaKey;
   let handled = true;
-  switch (e.key) {
+  // 縦組み: ↑↓ move along the column, ←→ to the next or previous column
+  const key = !isVertical() ? e.key : { ArrowUp: "ArrowLeft", ArrowDown: "ArrowRight", ArrowLeft: "ArrowDown", ArrowRight: "ArrowUp" }[e.key] || e.key;
+  switch (key) {
     case "ArrowLeft": ed.moveCaret(line ? "home" : word ? "wordLeft" : "left", ext); break;
     case "ArrowRight": ed.moveCaret(line ? "end" : word ? "wordRight" : "right", ext); break;
     case "ArrowUp": ed.moveCaret(line ? "docStart" : "up", ext); break;
@@ -1081,7 +1145,8 @@ function bindInput() {
     const page = e.target.closest?.(".page") || pageAtY(e.clientY);
     if (!page) return null;
     const r = page.getBoundingClientRect(), s = scale();
-    return { page: +page.dataset.page, x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
+    const p = fromPage((e.clientX - r.left) / s, (e.clientY - r.top) / s);
+    return { page: +page.dataset.page, x: p.x, y: p.y };
   };
   sc.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
@@ -1361,7 +1426,7 @@ async function savePdf(name) {
   const parts = [], lens = [], dims = [];
   toast(tr("PDF を作成しています…"));
   for (let i = 0; i < n; i++) {
-    const data = JSON.parse(S.ed.pageJson(i));
+    const data = pageData(i);
     const c = el("canvas"); c.width = Math.round(data.w * k * PT); c.height = Math.round(data.h * k * PT);
     const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
     g.setTransform(k * PT, 0, 0, k * PT, 0, 0);
@@ -1392,7 +1457,7 @@ function printDoc() {
   const n = S.ed.pageCount();
   const k = 2.2; // render at ~200 dpi
   for (let i = 0; i < n; i++) {
-    const data = JSON.parse(S.ed.pageJson(i));
+    const data = pageData(i);
     const c = el("canvas"); c.width = Math.round(data.w * k * PT); c.height = Math.round(data.h * k * PT);
     const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
     g.setTransform(k * PT, 0, 0, k * PT, 0, 0);
@@ -1571,11 +1636,12 @@ function paperNote() {
   const n = $("#st-note");
   if (!n || !S.ed) return;
   const st = JSON.parse(S.ed.setupJson());
-  const w = Math.round(st.width_mm), h = Math.round(st.height_mm);
+  // 縦組み: the setup is the turned layout page; show the paper as it is
+  const w = Math.round(st.vertical ? st.height_mm : st.width_mm), h = Math.round(st.vertical ? st.width_mm : st.height_mm);
   const sizes = { "210x297": "A4", "297x420": "A3", "182x257": "B5", "257x364": "B4", "148x210": "A5" };
   const key = w <= h ? `${w}x${h}` : `${h}x${w}`;
   const paper = (sizes[key] || `${w}×${h}mm`) + (w > h ? tr(" 横") : "");
-  n.textContent = tr("用紙: {0} {1}字×{2}行", paper, st.chars_per_line, st.lines_per_page);
+  n.textContent = tr("用紙: {0} {1}字×{2}行", paper, st.chars_per_line, st.lines_per_page) + (st.vertical ? tr("（縦書き）") : "");
 }
 
 boot().catch((e) => {

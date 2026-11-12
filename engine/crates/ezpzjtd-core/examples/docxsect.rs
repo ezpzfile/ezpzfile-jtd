@@ -1,0 +1,1 @@
+fn main() { let p = std::env::args().nth(1).unwrap(); let d = ezpzjtd_core::open(std::fs::read(&p).unwrap()).unwrap(); let s = d.page.clone().unwrap_or_default(); let x = ezpzjtd_core::docx::document_xml(&d, Some(0), &s); println!("{}", &x[x.find("<w:sectPr").unwrap()..]); }

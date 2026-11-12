@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.4.5, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.4.6, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -27,12 +27,19 @@ Status: **v0.4.5, reader + editor that saves back to `.jtd` (developer preview).
 <td><sub><b>Pictures (0.4.4)</b>: photos and illustrations in a document, where Ichitaro Viewer puts them (pictures swapped for this sample)</sub></td>
 <td><sub><b>When a file does not open (0.4.0)</b>: what the file is, why, and what you can do</sub></td>
 </tr>
+<tr>
+<td colspan="2"><a href="https://ezpzfile.com/jtd-editor"><img src="docs/images/vertical-en.png" alt="A document in vertical writing"></a></td>
+</tr>
+<tr>
+<td colspan="2"><sub><b>Vertical writing (0.4.6)</b>: <i>Night on the Galactic Railroad</i> (Kenji Miyazawa, public domain) in a novel template, with ruby to the right of the column</sub></td>
+</tr>
 </table>
 
 ### Recent releases
 
 | Version | What changed |
 |---|---|
+| 0.4.6 | **Vertical writing** shown and edited vertically (kanji and kana upright, 、。 at the top right, long vowels and brackets turned); Word export writes it vertically too |
 | 0.4.5 | No stray marks next to pictures; new screenshots |
 | 0.4.4 | Pictures (GIF, JPEG, PNG, BMP) drawn where they sit; also in PDF export |
 | 0.4.3 | `.jtdc` compressed documents in the open dialog; checked on 17 real files |
@@ -78,6 +85,7 @@ Tested on public Ichitaro files published by Japanese ministries and others (Ich
 - page setup: **paper size and orientation, margins, characters per line and lines per page**, base character size
 - font size, bold, italic, underline, colour, ruby (furigana), page breaks
 - typefaces: Mincho and Gothic (from the document's font table)
+- **vertical writing** (縦組み): lines run top to bottom and follow each other right to left; kanji and kana stand upright, 、。 sit at the top right, long vowels, brackets and half-width text turn; arrow keys follow the vertical direction
 - **pictures**: GIF, JPEG, PNG and BMP pictures drawn where they sit on the page (`/Frame` frames and anchors in the text, checked against Ichitaro Viewer)
 - document properties, including the **original file path** that Ichitaro leaves inside files
 
@@ -87,7 +95,7 @@ Tested on public Ichitaro files published by Japanese ministries and others (Ich
 - choose Mincho or Gothic and save it to `.jtd` (adds ＭＳ ゴシック to the font table)
 - export: Word (`.docx`), PDF, HTML, plain text, Markdown, JSON
 
-**Not yet**: shapes and text boxes, pictures in Word export, vertical writing (the setting is read), headers and footers,
+**Not yet**: shapes and text boxes, pictures in Word export, headers and footers,
 columns (段組), Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 

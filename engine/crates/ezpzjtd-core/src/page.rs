@@ -183,6 +183,9 @@ impl PageStyle {
             (d.margin_left_mm, d.margin_right_mm)
         };
         let font_pt = ((self.font as f32) / 35.2778 * 2.0).round() / 2.0;
+        // 縦組み: lay out on the page turned a quarter turn. Its top is the
+        // paper's right edge, its left the paper's top (see PageSetup::vertical).
+        let (w, h, t, b, l, r) = if self.vertical { (h, w, r, l, t, b) } else { (w, h, t, b, l, r) };
         PageSetup {
             width_mm: w,
             height_mm: h,
@@ -199,6 +202,7 @@ impl PageStyle {
             },
             gothic: Vec::new(),
             frames: Vec::new(),
+            vertical: self.vertical,
         }
     }
 }

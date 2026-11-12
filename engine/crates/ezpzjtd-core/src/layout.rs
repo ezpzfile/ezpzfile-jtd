@@ -36,6 +36,12 @@ pub struct PageSetup {
     /// their anchor's line is (see `frames.rs`). Filled from the document.
     #[serde(skip)]
     pub frames: Vec<(u16, i32, i32, u32, u32)>,
+    /// 縦組み: the page is laid out turned a quarter turn (width and height
+    /// swapped, the right margin on top), so lines run top to bottom and
+    /// follow each other from right to left once the drawing is turned back.
+    /// The editor turns it back when drawing (see `PageStyle::setup`).
+    #[serde(default)]
+    pub vertical: bool,
 }
 
 fn thirty() -> f32 {
@@ -56,6 +62,7 @@ impl Default for PageSetup {
             font_pt: 10.5,
             gothic: Vec::new(),
             frames: Vec::new(),
+            vertical: false,
         }
     }
 }
@@ -111,6 +118,7 @@ impl PageSetup {
             font_pt: fin(self.font_pt, 4.0, 100.0, d.font_pt),
             gothic: self.gothic.clone(),
             frames: self.frames.clone(),
+            vertical: self.vertical,
         }
     }
     pub fn page_w(&self) -> f32 {
