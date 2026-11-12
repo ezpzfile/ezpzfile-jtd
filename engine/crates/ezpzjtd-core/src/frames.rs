@@ -150,13 +150,48 @@ pub fn read_pictures(cfb: &Cfb, frames: &[Frame], max_bytes: usize) -> Vec<Pictu
     let mut total = 0usize;
     for f in frames.iter().filter(|f| f.kind == 1) {
         let Some(&(_, n)) = map.iter().find(|(id, _)| *id == f.id) else { continue };
-        let Some(c) = cfb.read(&format!("/EmbedItems/Embedding {n}/Contents")) else { continue };
-        if let Some((mime, data)) = picture_in(&c) {
+        let found = cfb
+            .read(&format!("/EmbedItems/Embedding {n}/Contents"))
+            .and_then(|c| picture_in(&c))
+            // a picture from another program (OLE): its vector preview
+            .or_else(|| {
+                let dir = format!("/EmbedItems/Embedding {n}/");
+                let e = cfb.streams().find(|e| e.path.starts_with(&dir) && e.name.ends_with("EmbeddedPress"))?;
+                let svg = crate::figure::snapshot_svg(&cfb.read(&e.path)?)?;
+                Some(("image/svg+xml", svg.into_bytes()))
+            });
+        if let Some((mime, data)) = found {
             total += data.len();
             if total > max_bytes {
                 break;
             }
             out.push(Picture { item: f.id, mime, data });
+        }
+    }
+    // figures (図形): each frame of kind 4 shows the figure of its size
+    if frames.iter().any(|f| f.kind == 4) {
+        let mut paths: Vec<&str> = cfb
+            .streams()
+            .filter(|e| e.path.starts_with("/FigureData/") && e.name == "FDMVector")
+            .map(|e| e.path.as_str())
+            .collect();
+        // main_data first, then layout_data n by n
+        paths.sort_by_key(|p| (!p.contains("/main_data/"), p.split("layout_data ").nth(1).and_then(|r| r.split('/').next()).and_then(|n| n.trim().parse::<u32>().ok()).unwrap_or(0)));
+        let mut figs: Vec<Option<crate::figure::Figure>> = Vec::new();
+        for p in paths {
+            if let Some(b) = cfb.read(p) {
+                figs.extend(crate::figure::figures(&b).into_iter().map(Some));
+            }
+        }
+        let near = |a: u32, b: u32| a.abs_diff(b) <= 20.max(a / 50);
+        for f in frames.iter().filter(|f| f.kind == 4) {
+            let Some(slot) = figs.iter_mut().find(|g| g.as_ref().is_some_and(|g| near(g.w, f.w) && near(g.h, f.h))) else { continue };
+            let g = slot.take().unwrap();
+            total += g.svg.len();
+            if total > max_bytes {
+                break;
+            }
+            out.push(Picture { item: f.id, mime: "image/svg+xml", data: g.svg.into_bytes() });
         }
     }
     out

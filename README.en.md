@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.4.9, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.5.0, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.4.9, reader + editor that saves back to `.jtd` (developer preview).
 
 | Version | What changed |
 |---|---|
+| 0.5.0 | **Figures** (illustrations, balloons, ellipses and rounded frames, staves) and **art text and drawings from other programs** such as Hanako (their OLE previews) now show. A two-column B4 school handout comes out close to Ichitaro Viewer |
 | 0.4.9 | Body text now **goes round** text boxes and photos (回り込み) instead of running under them; frames fixed to the page are placed from the paper's top left |
 | 0.4.8 | **Fonts**: the font names the document uses are listed as they are; pick one and it is saved to `.jtd`. Rounded Gothic, textbook, brush and pop faces are drawn with similar free fonts. **Text box** text, **columns** (段組), tight line spacing and pictures on ruled lines now show. **Word export carries pictures** and font names |
 | 0.4.7 | With input methods that report every key to the IME (Korean and others), Backspace, Delete and arrows work again and syllables no longer fall apart into letters; tidier tool palette whose buttons no longer wrap |
@@ -99,8 +100,8 @@ Tested on public Ichitaro files published by Japanese ministries and others (Ich
 - text box text, columns (段組) and pictures on ruled lines are shown
 - export: Word (`.docx`), PDF, HTML, plain text, Markdown, JSON
 
-**Not yet**: shapes (balloons, rounded frames and the like), editing text boxes and
-their borders, headers and footers, Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
+**Not yet**: editing figures and text boxes, text box borders and direction (vertical
+boxes), fill patterns of figures, figures in Word export, headers and footers, Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 
 ## Editor

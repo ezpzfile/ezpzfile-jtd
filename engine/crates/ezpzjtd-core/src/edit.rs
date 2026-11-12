@@ -1785,7 +1785,7 @@ pub fn gothic_fonts(doc: &Document) -> Vec<u16> {
 pub fn picture_frames(doc: &Document) -> Vec<(u16, i32, i32, u32, u32)> {
     doc.frames
         .iter()
-        .filter(|f| f.kind == 1 && doc.pictures.iter().any(|p| p.item == f.id))
+        .filter(|f| (f.kind == 1 || f.kind == 4) && doc.pictures.iter().any(|p| p.item == f.id))
         .map(|f| (f.id, f.x, f.y, f.w, f.h))
         .collect()
 }

@@ -1043,6 +1043,12 @@ pub fn layout_with(
     let mut one = full.clone();
     if cols > 1 {
         one.margin_right_mm = (full.page_w() - full.left() - col_w) / MM;
+        // 字数 is per column; a count meant for the whole width (a B4
+        // handout: 83 characters, two columns) would squeeze the
+        // characters, so fit it to the column
+        if one.chars_per_line as f32 * full.font_pt > col_w * 1.05 {
+            one.chars_per_line = ((col_w / full.font_pt).floor() as u32).max(4);
+        }
     }
     let setup = &one;
     let mut ctx = Ctx {
@@ -1196,20 +1202,31 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
         let fixed = setup.fixed.contains(id);
         let top = if fixed { 0.0 } else { top };
         let tl = if fixed { -ctx.dx } else { tl };
+        // 縦組み: a frame on the page is given on the paper as it is; the
+        // layout page is the paper turned a quarter turn
+        let turn = |x: f32, y: f32, w: f32, h: f32| {
+            if fixed && setup.vertical {
+                (y, setup.page_h() - (x + w), h, w)
+            } else {
+                (x, y, w, h)
+            }
+        };
         if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
-            let (x, y, w, h) = (tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
+            let (x, y, w, h) = turn(tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
             ctx.items().push(Item::Image { id: *id, x, y, w, h });
             if setup.wrap.contains(id) {
                 ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h));
             }
         }
         if let Some((_, fx, fy, fw, fh, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
-            let (dx, dy) = (tl + *fx as f32 * mm, top + *fy as f32 * mm);
+            // (a box's own writing direction is not read yet: its text is
+            // laid out across, from the frame's place in layout terms)
+            let (dx, dy, bw, bh) = (tl + *fx as f32 * mm, top + *fy as f32 * mm, *fw as f32 * mm, *fh as f32 * mm);
             for it in items {
                 ctx.items().push(it.moved(dx, dy));
             }
             if setup.wrap.contains(id) {
-                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + *fw as f32 * mm, dy + *fh as f32 * mm));
+                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh));
             }
         }
     }

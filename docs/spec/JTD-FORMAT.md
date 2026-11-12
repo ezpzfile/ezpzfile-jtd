@@ -583,3 +583,24 @@ Read from public files and checked against Ichitaro Viewer. Details and the read
   in the pitch (65 lines of 11 pt on A4 with 15 mm margins stay one pitch
   each in the viewer); record `100B` bit 1 is 行間 as 0.1 % of the
   character size and follows from the pitch.
+
+## 14. Figures and pictures from other programs **new (0.5.0)**
+
+See `figure.rs` for the byte layouts. In short:
+
+- `/FigureData/main_data/FDMVector` and `/FigureData/layout_data n/FDMVector`
+  hold one record per figure: `600b` groups (child offsets), `600a` shapes
+  (fill pattern, line width, fill and line colour `00 BB GG RR`, offsets of
+  outlines), outlines `6004` ellipse, `6006` polygon, `6009` curve (points,
+  two control vectors per segment, a flag per segment: 0x30 curve, 0x02 an
+  edge that is filled but not stroked). Units 1/40 mm. A frame of kind 4
+  shows the figure whose bbox × 2.5 equals the frame's size (the frame's
+  item number does not point at it). **observed**, 8 of 8 and 32 of 32
+  frames matched on two handouts
+- `/EmbedItems/Embedding n/EmbeddedPress` (`JSSnapShot32`) is the preview of
+  a picture from another program (花子 art text, drawings): GDI-like records
+  from 0x80 (paths, brushes, pens, polygons, beziers, 8-bit and 24-bit
+  bitmaps with a mask). Units 1/100 mm. **observed** on 41 previews
+- `/DocumentViewStyles` `1002` group 3 bit 1: 1 and 2 have both been seen
+  with two columns; 字数 can be given for the whole width (83 on B4) and is
+  then fitted to the column.

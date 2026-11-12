@@ -133,16 +133,16 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
                         if f[0] == Some(1) {
                             s.vertical = true;
                         }
-                        // group 3: bit1 (u8) columns less one (段組; 1 on a
-                        // two-memo form, 2 on an A3 handout in three
-                        // columns), bit4 (u8) 1 = 縦組み, bit6 ten u16: the
+                        // group 3: bit1 (u8) 段組 (1 or 2: two columns), bit4 (u8) 1 = 縦組み, bit6 ten u16: the
                         // gaps between columns (1/100 mm). The sizes of bits
                         // 0, 2, 3 and 5 are unknown, so stop at them.
                         if let Some(&m) = p.get(i) {
                             let mut j = i + 1;
                             if m & 0x2d == 0 {
                                 if m & 0x02 != 0 {
-                                    s.columns = p.get(j).map_or(1, |&c| c as u32 + 1).min(10);
+                                    // 1 on a two-card memo form and 2 on a B4 handout, both
+                                    // in two columns in 一太郎ビューア; three columns not seen yet
+                                    s.columns = if p.get(j).is_some_and(|&c| c >= 1) { 2 } else { 1 };
                                     j += 1;
                                 }
                                 if m & 0x10 != 0 {

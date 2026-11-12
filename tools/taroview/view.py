@@ -78,7 +78,7 @@ def main():
             status, detail = "CRASH", f"exit={p.returncode}"
             break
     if status == "OPEN":
-        subprocess.run(["xdotool", "windowsize", wid, "1280", "900"], env=ENV)
+        subprocess.run(["xdotool", "windowsize", wid, os.environ.get("TAROVIEW_W", "1280"), os.environ.get("TAROVIEW_H", "900")], env=ENV)
         subprocess.run(["xdotool", "windowmove", wid, "0", "0"], env=ENV)
         time.sleep(2.5)
         pages = int(sys.argv[sys.argv.index("--pages") + 1]) if "--pages" in sys.argv else 1
