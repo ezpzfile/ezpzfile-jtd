@@ -4,7 +4,7 @@ fn main() {
     let (from, to): (usize, usize) = (a[2].parse().unwrap(), a[3].parse().unwrap());
     for (bi, b) in d.sheets[0].blocks.iter().enumerate().skip(from).take(to - from) {
         if let ezpzjtd_core::doc::Block::Paragraph(p) = b {
-            println!("block {bi} feed={:?} runs:", p.feed);
+            println!("block {bi} feed={:?} no_line={} runs:", p.feed, p.no_line);
             for r in &p.runs { println!("   {:?} size={:?}", r.text, r.style.size_pt); }
         }
     }

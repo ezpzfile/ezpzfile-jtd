@@ -195,6 +195,11 @@ pub struct Paragraph {
     pub frames: Vec<u16>,
     #[serde(skip)]
     pub src: Src<ParaSrc>,
+    /// The empty paragraph that ends a 段組 record (`0020`) at the start of
+    /// the text: it takes no height (一太郎ビューア: a B4 handout's lines
+    /// start one line higher than with it, a320).
+    #[serde(skip)]
+    pub no_line: bool,
 }
 
 impl Paragraph {
@@ -822,6 +827,8 @@ struct Track {
 }
 
 struct Builder<'a> {
+    /// a `0020` record opened the text: the paragraph it ends takes no height
+    marker_para: bool,
     map: &'a StyleMap,
     blocks: Vec<Block>,
     para: Paragraph,
@@ -900,6 +907,9 @@ impl<'a> Builder<'a> {
             return;
         }
         let mut p = std::mem::take(&mut self.para);
+        if std::mem::take(&mut self.marker_para) && p.runs.is_empty() && p.frames.is_empty() {
+            p.no_line = true;
+        }
         p.align = self.para_align.take().unwrap_or(self.align);
         (p.indent, p.feed) = self.para_fmt.take().unwrap_or((self.indent, self.feed));
         if self.row.is_some() {
@@ -1051,6 +1061,7 @@ fn build_blocks(
 ) -> (Vec<Block>, Vec<(u32, u32)>) {
     let tokens = text::tokenize(units);
     let mut b = Builder {
+        marker_para: false,
         map,
         blocks: Vec::new(),
         para: Paragraph::default(),
@@ -1213,9 +1224,10 @@ fn build_blocks(
                     },
                 });
             }
-            Token::Record { class: 0x0020, .. } => {
+            Token::Record { class: 0x0020, start, .. } => {
                 b.close_row();
                 b.close_table();
+                b.marker_para = *start == 0;
             }
             Token::Record { class: 0x0000, payload, .. } => {
                 if let Some(id) = crate::frames::anchor_id(payload) {

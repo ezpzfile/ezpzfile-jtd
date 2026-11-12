@@ -614,6 +614,19 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.4** Frames fixed on the page (word [6] = 2) that text goes round
+  are known before their anchors in 一太郎ビューア: lines above the anchor
+  already go round them (a B4 handout's labels and route map). A first
+  layout pass finds the page and half each lands on; the second sets them
+  up as that half starts, for every column. A line with nothing to show
+  is not moved round frames unless it is empty and anchors a frame placed
+  on its line (a drawing under a title picture); such a frame is placed
+  once the line has its place. A frame starting in the lower 40 % of a
+  line leaves the line whole. A `0020` record at offset 0 ends a paragraph
+  that takes no height (the a320 handout's lines start one higher). A
+  closing mark (、。）」』】〕〉》) before another mark or bracket takes half
+  a cell. **observed**
+
 - **0.5.3** `1002` group 3 bit 1 = 2 (a B4 landscape handout): two columns
   and the page cut across in halves. Each half is laid out like a page of
   half the paper's height with the page's margins and pitch (19 lines a

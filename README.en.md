@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.5.3, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.5.4, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.5.3, reader + editor that saves back to `.jtd` (developer preview).
 
 | Version | What changed |
 |---|---|
+| 0.5.4 | Frames fixed on the page are avoided from the start of their half (or page), found in a first pass. An empty line moves below a frame only when it holds a drawing that sits on the line. The 段組 record line at the start of the text takes no height. A closing mark before another bracket takes half a cell. Two school handouts now lay out almost exactly like Ichitaro Viewer |
 | 0.5.3 | B4 landscape **columns split into top and bottom halves** (text runs top left, top right, bottom left, bottom right; frames fixed on the page are measured from their half). Empty lines no longer move round frames, a text box across the whole column pushes the text below it, and lines with ruby or 16 pt characters stay one line tall |
 | 0.5.2 | Text box **shadows** (solid and dotted), **fills** (one colour and gradients), inner margins and line spacing matched to Ichitaro Viewer. When 行数 and 行間 disagree by more than twice, 行間 wins |
 | 0.5.1 | Text box **frame lines** (dotted, solid, rounded), figure **dot fills** and gradients, figures placed inside text boxes. Body text goes round photos and narrows beside text boxes (as in Ichitaro Viewer). **Word export carries figures** (SVG) |

@@ -129,9 +129,10 @@ pub const MAX_LINES: usize = 400_000;
 /// 一太郎ビューア.
 const NEED_FIT: f32 = 0.95;
 
-/// Text moved below a frame keeps this far below it (一太郎ビューア on a B4
-/// handout: the line after the 持ち物 box starts one line further down).
-/// Lines beside a narrow text box start right under it.
+/// Text moved below a text box across the column keeps this far below it
+/// (一太郎ビューア on a B4 handout: the line after the 持ち物 box, which has a
+/// shadow, starts one line further down). Lines go right under a picture
+/// (the school name 1.8 mm under the title picture) and beside a narrow box.
 const WRAP_GAP: f32 = 4.0 * MM;
 
 fn is_plain_kind(k: &u8) -> bool {
@@ -376,6 +377,8 @@ pub fn is_half(c: char) -> bool {
 
 const NO_START: &str = "、。，．,.)）]］｝」』】〕〉》〙〗’”ゝゞーァィゥェォッャュョヮヵヶぁぃぅぇぉっゃゅょゎゕゖ・：；？！!?";
 const HANG: &str = "、。，．,.";
+const CLOSE_MARK: &str = "、。，．）」』】〕〉》";
+const OPEN_MARK: &str = "（「『【〔〈《";
 const NO_END: &str = "(（[［｛「『【〔〈《〘〖‘“";
 
 #[derive(Clone)]
@@ -409,11 +412,21 @@ struct Ctx<'a> {
     /// Frames placed so far that text goes round: page, column, x1, y1, x2,
     /// y2, and whether a line with no room beside it moves below it (a
     /// picture) or is set over it (a text box).
-    wraps: Vec<(usize, u32, f32, f32, f32, f32, bool)>,
+    wraps: Vec<(usize, u32, f32, f32, f32, f32, bool, u16)>,
+    /// frames of the paragraph being laid out: its first line does not go
+    /// round them (a handout's first line holds the title picture)
+    own: Vec<u16>,
     /// Halves of the page cut across (1 or 2) and the current one
     rows: u32,
     row: u32,
     breaking: bool,
+    /// Frames fixed on the page that text goes round, by the page and half
+    /// they landed on in a first pass: set up when that half starts, so the
+    /// lines above their anchors already go round them (一太郎ビューア: a
+    /// handout's route map of small boxes keeps the text beside it clear)
+    pre_frames: std::collections::HashMap<(usize, u32), Vec<u16>>,
+    /// where each fixed frame landed in this pass
+    landed: std::collections::HashMap<u16, (usize, u32)>,
 }
 
 impl<'a> Ctx<'a> {
@@ -455,11 +468,40 @@ impl<'a> Ctx<'a> {
             self.y = self.top();
             let n = self.out.pages[self.page].items.len();
             self.segs.push((self.page, n, self.out.lines.len(), 0.0));
+            self.preregister();
             return;
         }
         self.row = 0;
         self.real_new_page();
         self.segs.push((self.page, self.out.pages[self.page].items.len(), self.out.lines.len(), 0.0));
+    }
+
+    /// Set up the frames fixed on the page that the first pass found in this
+    /// half, for every column (a frame can sit in a column other than its
+    /// anchor's). Their own drawing still happens at their anchors.
+    fn preregister(&mut self) {
+        let Some(ids) = self.pre_frames.get(&(self.page, self.row)).cloned() else { return };
+        let setup = self.setup;
+        let mm = MM / 100.0;
+        let top = self.paper_top();
+        for id in ids {
+            // (x, y, w, h, push, gap below): a picture keeps no gap, a box
+            // across the column keeps WRAP_GAP
+            let rect = if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == id) {
+                Some((fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm, true, 0.0))
+            } else {
+                setup.boxes.0.iter().find(|b| b.0 == id).map(|(_, fx, fy, fw, fh, _)| {
+                    let bw = *fw as f32 * mm;
+                    let full = bw >= setup.text_w() * 0.9;
+                    (*fx as f32 * mm, top + *fy as f32 * mm, bw, *fh as f32 * mm, full, if full { WRAP_GAP } else { 0.0 })
+                })
+            };
+            let Some((x, y, w, h, push, gap)) = rect else { continue };
+            for c in 0..self.cols {
+                let off = c as f32 * self.col_step;
+                self.wraps.push((self.page, c, x - off, y, x + w - off, y + h + gap, push, id));
+            }
+        }
     }
 
     /// The widest stretch of `l..r` that no frame the text goes round covers
@@ -477,8 +519,15 @@ impl<'a> Ctx<'a> {
     fn free_span_of(&self, l: f32, r: f32, y1: f32, y2: f32, min_w: f32, only_push: bool) -> Result<(f32, f32), f32> {
         let mut segs = vec![(l, r)];
         let mut low = f32::MIN;
-        for &(pg, col, x1, fy1, x2, fy2, push) in &self.wraps {
-            if (only_push && !push) || pg != self.page || col != self.col || fy1 >= y2 || fy2 <= y1 || x2 <= l || x1 >= r {
+        for &(pg, col, x1, fy1, x2, fy2, push, id) in &self.wraps {
+            if self.own.contains(&id) {
+                continue;
+            }
+            // a frame that starts in the lower part of the line leaves it
+            // whole (一太郎ビューア: a handout's school name line keeps its
+            // width over a picture 2 mm into it)
+            let low_edge = y2 - (y2 - y1) * 0.4;
+            if (only_push && !push) || pg != self.page || col != self.col || fy1 >= low_edge || fy2 <= y1 || x2 <= l || x1 >= r {
                 continue;
             }
             low = low.max(fy2);
@@ -556,6 +605,7 @@ impl<'a> Ctx<'a> {
         self.page = self.out.pages.len() - 1;
         self.row = 0;
         self.y = self.setup.top();
+        self.preregister();
     }
     fn items(&mut self) -> &mut Vec<Item> {
         &mut self.out.pages[self.page].items
@@ -612,6 +662,14 @@ fn glyphs(p: &Paragraph, base: f32, spread: f32, pre: Option<(usize, &str)>) -> 
         if po >= off {
             let st = p.runs.last().map(|r| r.style.clone()).unwrap_or_default();
             push_pre(&mut out, &st, txt);
+        }
+    }
+    // 約物の連続: a closing mark right before another bracket or mark takes
+    // half a cell (一太郎ビューア sets 「す。（車」 one character shorter, so a
+    // handout's line ending in 「しょう）」 still fits)
+    for k in 0..out.len().saturating_sub(1) {
+        if CLOSE_MARK.contains(out[k].ch) && (CLOSE_MARK.contains(out[k + 1].ch) || OPEN_MARK.contains(out[k + 1].ch)) {
+            out[k].w /= 2.0;
         }
     }
     out
@@ -707,9 +765,13 @@ fn layout_para(
         if ctx.y + pitch > ctx.bottom() + 0.5 && ctx.y > ctx.top() + 0.5 {
             ctx.new_page();
         }
+        // frames on the page now (the lines go round them); frames that sit on
+        // the anchor's line once that line has found its place (a drawing on an
+        // empty line moved below the title picture, ca202f)
         let y = ctx.y;
-        push_frames(ctx, &p.frames, y);
-        frames_done = true;
+        let fixed: Vec<u16> = p.frames.iter().copied().filter(|f| setup.fixed.contains(f)).collect();
+        push_frames(ctx, &fixed, y);
+        frames_done = fixed.len() == p.frames.len();
     }
     let mut used = 0.0;
     let mut nlines = ranges.len();
@@ -729,10 +791,17 @@ fn layout_para(
             }
             let (l0, r0) = if li == 0 { first } else { (left, right) };
             let mut lr = (l0, r0);
+            // (only for a line with nothing to show: text still goes round its own picture)
+            ctx.own = if li == 0 && gs.iter().all(|g| g.ch.is_whitespace()) { p.frames.clone() } else { Vec::new() };
             // an empty line (or one of spaces) is not moved round frames:
             // the lines under a handout's title pictures keep their places
             // in 一太郎ビューア (a320: the line after them lands at 84 mm)
-            let tries = if gs.iter().all(|g| g.ch.is_whitespace()) { 0 } else { 64 };
+            // ...unless it anchors a frame that sits on its line (a school
+            // handout's empty line holding a drawing goes below the title
+            // picture, ca202f)
+            // (a line of spaces holding drawings stays: a380's choir figures)
+            let floating = li == 0 && gs.is_empty() && p.frames.iter().any(|f| !setup.fixed.contains(f));
+            let tries = if gs.iter().all(|g| g.ch.is_whitespace()) && !floating { 0 } else { 64 };
             for _ in 0..tries {
                 match ctx.free_span(l0, r0, ctx.y, ctx.y + pitch, (base * 3.0).min(r0 - l0)) {
                     Ok(sp) => {
@@ -792,7 +861,8 @@ fn layout_para(
         let top = ctx.y;
         // pictures anchored in this paragraph: from the text area's left and this line's top
         if li == 0 && !p.frames.is_empty() && !frames_done {
-            push_frames(ctx, &p.frames, top);
+            let rest: Vec<u16> = if wrapping { p.frames.iter().copied().filter(|f| !setup.fixed.contains(f)).collect() } else { p.frames.clone() };
+            push_frames(ctx, &rest, top);
         }
         let baseline = top + h - (pitch - base) / 2.0 - base * 0.12;
         let lw: f32 = line.iter().map(|g| g.w).sum();
@@ -950,11 +1020,11 @@ fn layout_para(
             });
         }
         // 改行幅: the paragraph's own feed after each of its lines
-        let adv = p
-            .feed
-            .or(row_feed)
-            .and_then(|f| f.points(pitch))
-            .unwrap_or(h);
+        let adv = if p.no_line {
+            0.0
+        } else {
+            p.feed.or(row_feed).and_then(|f| f.points(pitch)).unwrap_or(h)
+        };
         ctx.y += adv;
         used += adv;
         li += 1;
@@ -1026,9 +1096,12 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                 dx: 0.0,
                 segs: Vec::new(),
                 wraps: Vec::new(),
+                own: Vec::new(),
                 rows: 1,
                 row: 0,
                 breaking: false,
+                pre_frames: Default::default(),
+                landed: Default::default(),
             };
             scratch.out.pages.push(Page {
                 w: 0.0,
@@ -1161,6 +1234,34 @@ pub fn layout_with(
         }
     }
     let setup = &one;
+    // two passes when frames fixed on the page wrap text: the first finds
+    // the half each lands on, the second sets them up as that half starts
+    let (out, landed) = layout_pass(blocks, setup, &full, show_marks, pre, max_pages, cols, col_w, gap, Default::default());
+    // (縦組み turns frames on the page: not set up ahead there yet)
+    // (a long document with such frames lays out once: typing stays quick)
+    if landed.is_empty() || full.vertical || blocks.len() > 4000 {
+        return out;
+    }
+    let mut pre_frames: std::collections::HashMap<(usize, u32), Vec<u16>> = Default::default();
+    for (id, at) in landed {
+        pre_frames.entry(at).or_default().push(id);
+    }
+    layout_pass(blocks, setup, &full, show_marks, pre, max_pages, cols, col_w, gap, pre_frames).0
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layout_pass(
+    blocks: &[Block],
+    setup: &PageSetup,
+    full: &PageSetup,
+    show_marks: bool,
+    pre: Option<&Preedit>,
+    max_pages: usize,
+    cols: u32,
+    col_w: f32,
+    gap: f32,
+    pre_frames: std::collections::HashMap<(usize, u32), Vec<u16>>,
+) -> (Layout, std::collections::HashMap<u16, (usize, u32)>) {
     let mut ctx = Ctx {
         setup,
         show_marks,
@@ -1174,9 +1275,12 @@ pub fn layout_with(
         dx: 0.0,
         segs: Vec::new(),
         wraps: Vec::new(),
+        own: Vec::new(),
         rows: if cols > 1 { full.rows.clamp(1, 2) } else { 1 },
         row: 0,
         breaking: false,
+        pre_frames,
+        landed: Default::default(),
     };
     ctx.new_page();
     let mut flat = 0usize;
@@ -1221,7 +1325,7 @@ pub fn layout_with(
         }
     }
     ctx.place_columns();
-    ctx.out
+    (ctx.out, ctx.landed)
 }
 
 /// Is this face a Gothic (sans) face? Names as Ichitaro and Windows write them.
@@ -1317,6 +1421,11 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
         // with 一太郎ビューア on a handout with A4 margins of 20 and 17 mm), and
         // stays where it is whatever column anchors it
         let fixed = setup.fixed.contains(id);
+        if fixed && setup.wrap.contains(id) {
+            ctx.landed.insert(*id, (ctx.page, ctx.row));
+        }
+        // set up already when this half started (see `Ctx::preregister`)
+        let ready = fixed && ctx.pre_frames.get(&(ctx.page, ctx.row)).is_some_and(|v| v.contains(id));
         let top = if fixed { ctx.paper_top() } else { top };
         let tl = if fixed { -ctx.dx } else { tl };
         // 縦組み: a frame on the page is given on the paper as it is; the
@@ -1331,8 +1440,8 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
         if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
             let (x, y, w, h) = turn(tl + fx as f32 * mm, top + fy as f32 * mm, fw as f32 * mm, fh as f32 * mm);
             ctx.items().push(Item::Image { id: *id, x, y, w, h });
-            if setup.wrap.contains(id) {
-                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h + WRAP_GAP, true));
+            if setup.wrap.contains(id) && !ready {
+                ctx.wraps.push((ctx.page, ctx.col, x, y, x + w, y + h, true, *id));
             }
         }
         if let Some((_, fx, fy, fw, fh, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
@@ -1342,12 +1451,12 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
             for it in items {
                 ctx.items().push(it.moved(dx, dy));
             }
-            if setup.wrap.contains(id) {
+            if setup.wrap.contains(id) && !ready {
                 // a box across the whole column moves the text below it (the
                 // 持ち物 box of a B4 handout); a narrower one leaves the
                 // text over it where no room is beside it
                 let full = bw >= (setup.text_w() * 0.9).min(ctx.col_step.max(setup.text_w()));
-                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh + if full { WRAP_GAP } else { 0.0 }, full));
+                ctx.wraps.push((ctx.page, ctx.col, dx, dy, dx + bw, dy + bh + if full { WRAP_GAP } else { 0.0 }, full, *id));
             }
         }
     }
