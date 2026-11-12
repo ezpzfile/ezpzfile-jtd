@@ -319,6 +319,14 @@ function picture(id) {
   }
   return S.pics.get(id);
 }
+/** A fill of small dots in `color` (a dotted shadow). */
+function dotPattern(g, color) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 3;
+  const x = c.getContext("2d");
+  x.fillStyle = color; x.fillRect(0, 0, 1, 1); x.fillRect(2, 2, 1, 1);
+  return g.createPattern(c, "repeat") || color;
+}
 // ------------------------------------------------------------------ free faces
 const faceState = {}; // class → { link, chars: Set, timer }
 /** Fetch the pieces of a free face that the drawn text needs, then draw again. */
@@ -396,13 +404,35 @@ function paintItems(g, data, marks) {
   // frame lines of text boxes
   for (const it of data.items) {
     if (it.t !== "Rect") continue;
+    const shape = (dx, dy) => {
+      g.beginPath();
+      if (g.roundRect && it.r > 0) g.roundRect(it.x + dx, it.y + dy, it.w, it.h, it.r); else g.rect(it.x + dx, it.y + dy, it.w, it.h);
+    };
     g.save();
-    g.strokeStyle = it.color || "#000";
-    g.lineWidth = Math.max(0.5, it.lw);
-    if (it.dot) g.setLineDash([Math.max(1, it.lw), Math.max(2, it.lw * 2)]);
-    g.beginPath();
-    if (g.roundRect && it.r > 0) g.roundRect(it.x, it.y, it.w, it.h, it.r); else g.rect(it.x, it.y, it.w, it.h);
-    g.stroke();
+    // drop shadow: solid, or dotted like the frame line
+    if (it.shadow) {
+      const [sx, sy, sc] = it.shadow;
+      g.fillStyle = it.dot ? dotPattern(g, sc) : sc;
+      shape(sx, sy); g.fill();
+      g.fillStyle = "#fff"; shape(0, 0); g.fill();
+    }
+    if (it.fill && it.fill.length) {
+      if (it.fill.length === 1) g.fillStyle = it.fill[0][1];
+      else {
+        const a = ((it.angle || 0) * Math.PI) / 180, cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+        const dx = (Math.cos(a) * it.w) / 2, dy = (Math.sin(a) * it.h) / 2;
+        const gr = g.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+        for (const [p, c] of it.fill) gr.addColorStop(Math.min(1, Math.max(0, p)), c);
+        g.fillStyle = gr;
+      }
+      shape(0, 0); g.fill();
+    }
+    if (!it.noline) {
+      g.strokeStyle = it.color || "#000";
+      g.lineWidth = Math.max(0.5, it.lw);
+      if (it.dot) g.setLineDash([Math.max(1, it.lw), Math.max(2, it.lw * 2)]);
+      shape(0, 0); g.stroke();
+    }
     g.restore();
   }
   g.textBaseline = "alphabetic";
@@ -721,7 +751,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.1")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.2")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */

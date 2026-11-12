@@ -77,6 +77,8 @@ pub struct PageStyle {
     pub margins: [u32; 4],
     pub half_chars: u32,
     pub lines: u32,
+    /// 行間 as 0.1 % of the character size (`100B` bit 1), when stored
+    pub gap: Option<u32>,
     pub font: u32,
     /// 縦組み (vertical writing)
     pub vertical: bool,
@@ -92,6 +94,7 @@ impl Default for PageStyle {
             margins: [MARGIN; 4],
             half_chars: HALF_CHARS,
             lines: LINES,
+            gap: None,
             font: FONT,
             vertical: false,
             columns: 1,
@@ -163,6 +166,7 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
                     if let Some(v) = f[7].filter(|&v| v > 0) {
                         s.half_chars = v;
                     }
+                    s.gap = f[1];
                 }
             }
             // bit1 lines per page
@@ -186,6 +190,23 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
 }
 
 impl PageStyle {
+    /// 行数, unless it gives lines more than twice as far apart as 行間 does
+    /// (a B4 handout says 20 lines, but its lines are 5.5 mm apart in
+    /// 一太郎ビューア, as 42 % 行間 of 11 pt gives): then as many lines as
+    /// 行間 fits. Below twice, 行数 wins (A4 forms of 40 lines whose 行間
+    /// says 9 %).
+    fn lines_for(&self, margins_mm: f32, height_mm: f32, font_pt: f32) -> u32 {
+        let lines = self.lines.max(1);
+        let Some(gap) = self.gap.filter(|&g| g > 0 && g < 5000) else { return lines };
+        let text_pt = (height_mm - margins_mm).max(10.0) * 72.0 / 25.4;
+        let want = font_pt * (1.0 + gap as f32 / 1000.0);
+        if text_pt / lines as f32 > 2.0 * want {
+            (text_pt / want).floor() as u32
+        } else {
+            lines
+        }
+    }
+
     /// Page geometry for layout.
     pub fn setup(&self) -> PageSetup {
         let mm = |v: u32| v as f32 / 100.0;
@@ -218,7 +239,7 @@ impl PageStyle {
             margin_left_mm: l,
             margin_right_mm: r,
             chars_per_line: (self.half_chars / 2).clamp(4, 400),
-            lines_per_page: self.lines.clamp(2, 400),
+            lines_per_page: self.lines_for(t + b, h, font_pt).clamp(2, 400),
             font_pt: if (4.0..=100.0).contains(&font_pt) {
                 font_pt
             } else {
@@ -270,7 +291,8 @@ mod tests {
             (0x100d, &[0x02, 0x00, 0x28]),
         ]);
         let s = parse(&b).unwrap();
-        assert_eq!(s, PageStyle::default());
+        assert_eq!(s.gap, Some(600));
+        assert_eq!(PageStyle { gap: None, ..s.clone() }, PageStyle::default());
         let p = s.setup();
         assert_eq!((p.width_mm, p.height_mm), (210.0, 297.0));
         assert_eq!(

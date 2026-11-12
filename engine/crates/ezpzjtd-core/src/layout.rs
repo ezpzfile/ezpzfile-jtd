@@ -58,6 +58,10 @@ pub struct PageSetup {
     /// Frames the text goes round (回り込み), by id.
     #[serde(skip)]
     pub wrap: Vec<u16>,
+    /// Lines as tall as their characters plus a small gap, not on the page's
+    /// line grid (text boxes).
+    #[serde(skip)]
+    pub free_lines: bool,
     /// 縦組み: the page is laid out turned a quarter turn (width and height
     /// swapped, the right margin on top), so lines run top to bottom and
     /// follow each other from right to left once the drawing is turned back.
@@ -101,6 +105,7 @@ impl Default for PageSetup {
             boxes: Default::default(),
             fixed: Vec::new(),
             wrap: Vec::new(),
+            free_lines: false,
             vertical: false,
             columns: 1,
             col_gap_mm: 0.0,
@@ -166,6 +171,7 @@ impl PageSetup {
             boxes: self.boxes.clone(),
             fixed: self.fixed.clone(),
             wrap: self.wrap.clone(),
+            free_lines: self.free_lines,
             vertical: self.vertical,
             columns: self.columns.clamp(1, 10),
             col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
@@ -282,6 +288,17 @@ pub enum Item {
         color: String,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         dot: bool,
+        /// No line, only the fill.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        noline: bool,
+        /// Fill: one colour or gradient stops (0-1, colour), at `angle` degrees.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        fill: Vec<(f32, String)>,
+        #[serde(skip_serializing_if = "is_zero_f")]
+        angle: f32,
+        /// Shadow offset (pt) and colour.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shadow: Option<(f32, f32, String)>,
     },
     /// Editing marks (編集記号): "ret" paragraph end, "sp" full-width space,
     /// "pb" page break, "tab".
@@ -697,7 +714,11 @@ fn layout_para(
         // whole line pitches that hold the tallest character (computed, not
         // counted up one pitch at a time: a tiny pitch made that loop run
         // millions of times per line)
-        let h = if pitch > 0.0 && pitch.is_finite() {
+        let h = if setup.free_lines {
+            // a text box: 10.5 pt lines 13.4 pt apart and 21 pt lines 24 pt
+            // apart in 一太郎ビューア
+            max_size + base * 0.28 + if has_ruby { max_size * 0.5 } else { 0.0 }
+        } else if pitch > 0.0 && pitch.is_finite() {
             pitch * (need / pitch).ceil().max(1.0)
         } else {
             need.max(1.0)
@@ -1142,6 +1163,10 @@ pub fn is_gothic(name: &str) -> bool {
         .any(|k| n.contains(k))
 }
 
+fn is_zero_f(v: &f32) -> bool {
+    *v == 0.0
+}
+
 fn is_zero(v: &u8) -> bool {
     *v == 0
 }
@@ -1281,7 +1306,7 @@ impl Item {
 
 /// Lay out the text of each text box (frame of kind 2) inside the box, once:
 /// the box's own margins, the document's character size and faces, one
-/// character per cell and a line pitch of 1.5 characters (the box keeps as
+/// character per cell and a line pitch of 1.25 characters (the box keeps as
 /// many whole lines as fit, at least one). Text past the box is cut off.
 pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32, i32, u32, u32, Vec<Item>)> {
     let mut out = Vec::new();
@@ -1297,8 +1322,10 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         let (bw, bh) = (f.w as f32 / 100.0, f.h as f32 / 100.0);
         let inner_w = (bw - pl - pr).max(1.0) * MM;
         let inner_h = (bh - pt - pb).max(1.0) * MM;
-        let lines = ((inner_h / (font * 1.5)).floor() as u32).max(1);
-        let pitch = inner_h / lines as f32;
+        // line pitch 1.25 characters (a handout's box: seven lines of
+        // 10.5 pt in 33 mm, and two lines of 21 pt and one of 15 pt in 23 mm)
+        let pitch = font * 1.25;
+        let lines = ((inner_h / pitch).floor() as u32).max(1);
         // room below the box too, so that anchors on later lines still place
         // their pictures; text past the box is cut off below
         let n = (lines + 200).min(((1400.0 * MM - pt * MM) / pitch).floor().max(2.0) as u32).max(2);
@@ -1322,11 +1349,13 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             // pictures and figures anchored in the box's own text (children
             // drawn in an empty box next to a heading)
             frames: setup.frames.clone(),
+            free_lines: true,
             ..PageSetup::default()
         };
         let l = layout_with(&b.blocks, &sub, false, None, 1);
         let Some(page) = l.pages.first() else { continue };
-        let max_y = (pt + bh) * MM;
+        // text past the box's bottom is not shown
+        let max_y = bh * MM;
         let mut items: Vec<Item> = Vec::new();
         // figures kept with this box's layout and not anchored in its text:
         // placed from the box's top left
@@ -1350,6 +1379,10 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 lw: bd.width_mm * MM,
                 color: bd.color.clone(),
                 dot: bd.dotted,
+                noline: !bd.line,
+                fill: bd.fill.clone(),
+                angle: bd.angle,
+                shadow: bd.shadow.as_ref().map(|(x, y, c)| (x * MM, y * MM, c.clone())),
             });
         }
         items.extend(page

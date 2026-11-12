@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.5.1, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.5.2, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.5.1, reader + editor that saves back to `.jtd` (developer preview).
 
 | Version | What changed |
 |---|---|
+| 0.5.2 | Text box **shadows** (solid and dotted), **fills** (one colour and gradients), inner margins and line spacing matched to Ichitaro Viewer. When 行数 and 行間 disagree by more than twice, 行間 wins |
 | 0.5.1 | Text box **frame lines** (dotted, solid, rounded), figure **dot fills** and gradients, figures placed inside text boxes. Body text goes round photos and narrows beside text boxes (as in Ichitaro Viewer). **Word export carries figures** (SVG) |
 | 0.5.0 | **Figures** (illustrations, balloons, ellipses and rounded frames, staves) and **art text and drawings from other programs** such as Hanako (their OLE previews) now show. A two-column B4 school handout comes out close to Ichitaro Viewer |
 | 0.4.9 | Body text now **goes round** text boxes and photos (回り込み) instead of running under them; frames fixed to the page are placed from the paper's top left |

@@ -272,18 +272,31 @@ pub struct Border {
     /// Corner radius
     pub radius_mm: f32,
     pub dotted: bool,
+    /// The line is drawn (a box can have only a fill).
+    pub line: bool,
+    /// Fill: none, one colour, or gradient stops (0-1, colour) at `angle`
+    /// degrees (`0403` type 1 / 2 and `0404`).
+    pub fill: Vec<(f32, String)>,
+    pub angle: f32,
+    /// Drop shadow: offset right and down (mm) and colour.
+    pub shadow: Option<(f32, f32, String)>,
 }
 
 #[derive(Default)]
 struct BoxStyle {
     pad: [u16; 4],
     line: Option<u16>,
-    shape: Option<(u32, u32, String)>,
+    /// radius, width, line colour, shadow x, shadow y, shadow colour
+    shape: Option<(u32, u32, String, u32, u32, String)>,
+    fill_type: u32,
+    fill_color: String,
+    stops: Vec<(f32, String)>,
+    angle: f32,
 }
 
 /// Inner margins of each box of `/LayoutBox`, in box order. Each box is
 /// `0201` (8 bytes), `6668` + u16 0 + u16 length holding records `60xx`
-/// (6006: u16 flags, then left, right, top, bottom), then `0401`, `0403`.
+/// (6006: u8 flags, then u16 left, right, top, bottom), then `0401`, `0403`.
 fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
     let mut out: Vec<BoxStyle> = Vec::new();
     let mut o = 8usize;
@@ -300,9 +313,9 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
             while q + 4 <= end {
                 let t = u16::from_be_bytes([b[q], b[q + 1]]);
                 let l = u16::from_be_bytes([b[q + 2], b[q + 3]]) as usize;
-                let v = |k: usize| u16::from_be_bytes([b[q + 6 + k * 2], b[q + 7 + k * 2]]);
+                let v = |k: usize| u16::from_be_bytes([b[q + 5 + k * 2], b[q + 6 + k * 2]]);
                 if let Some(st) = out.last_mut() {
-                    if t == 0x6006 && l >= 10 && q + 14 <= end {
+                    if t == 0x6006 && l >= 9 && q + 13 <= end {
                         st.pad = [v(0), v(1), v(2), v(3)].map(|x| x.min(3000));
                     }
                     // 6007: 02, u16 line type (1-8 seen on boxes with a line)
@@ -316,10 +329,34 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
         } else {
             // 0401: u32 ×5 (the second is the line width and the third the
             // corner radius, 1/100 mm), then the line colour 00 BB GG RR
-            if tag == 0x0401 && len >= 24 {
-                if let (Some(st), Some(r), Some(w), Some(c)) = (out.last_mut(), be32(o + 12), be32(o + 8), be32(o + 24)) {
-                    let c = c.to_be_bytes();
-                    st.shape = Some((r, w, format!("#{:02x}{:02x}{:02x}", c[3], c[2], c[1])));
+            let col = |v: u32| {
+                let c = v.to_be_bytes();
+                format!("#{:02x}{:02x}{:02x}", c[3], c[2], c[1])
+            };
+            // the fourth and fifth are the shadow's offset, then the shadow colour
+            if tag == 0x0401 && len >= 28 {
+                if let (Some(st), Some(r), Some(w), Some(c), Some(sx), Some(sy), Some(sc)) =
+                    (out.last_mut(), be32(o + 12), be32(o + 8), be32(o + 24), be32(o + 16), be32(o + 20), be32(o + 28))
+                {
+                    st.shape = Some((r, w, col(c), sx, sy, col(sc)));
+                }
+            }
+            // 0403: u32 fill type (0 none, 1 one colour, 2 gradient), colour
+            if tag == 0x0403 && len >= 8 {
+                if let (Some(st), Some(t), Some(c)) = (out.last_mut(), be32(o + 4), be32(o + 8)) {
+                    st.fill_type = t;
+                    st.fill_color = col(c);
+                }
+            }
+            // 0404: u32 ?, u32 angle, 8 bytes, u32 stop count, then (u32 % , colour)
+            if tag == 0x0404 && len >= 20 {
+                if let (Some(st), Some(a), Some(n)) = (out.last_mut(), be32(o + 8), be32(o + 20)) {
+                    st.angle = a as f32;
+                    for k in 0..(n as usize).min(16) {
+                        if let (Some(p), Some(c)) = (be32(o + 24 + 8 * k), be32(o + 28 + 8 * k)) {
+                            st.stops.push(((p as f32 / 100.0).clamp(0.0, 1.0), col(c)));
+                        }
+                    }
                 }
             }
             o += 4 + len;
@@ -346,14 +383,28 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
             pad: styles.get(i).map_or([200, 200, 100, 100], |s| s.pad),
             border: styles.get(i).and_then(|s| {
                 // line types seen against 一太郎ビューア: 1-4 dotted, 5 and 8
-                // solid, 6 none (an empty box round a picture), larger none
-                let line = s.line.filter(|&l| matches!(l, 1..=5 | 8))?;
-                let (r, w, color) = s.shape.clone()?;
+                // solid, 6 none (an empty box round a picture), larger none;
+                // 4, 5 and 8 carry a shadow
+                let line = s.line.filter(|&l| matches!(l, 1..=5 | 8));
+                let fill: Vec<(f32, String)> = match s.fill_type {
+                    1 => vec![(0.0, s.fill_color.clone())],
+                    2 if !s.stops.is_empty() => s.stops.clone(),
+                    _ => Vec::new(),
+                };
+                if line.is_none() && fill.is_empty() {
+                    return None;
+                }
+                let (r, w, color, sx, sy, sc) = s.shape.clone()?;
+                let shadow = line.filter(|l| matches!(l, 4 | 5 | 8)).map(|_| ((sx as f32 / 100.0).clamp(0.0, 5.0), (sy as f32 / 100.0).clamp(0.0, 5.0), sc));
                 Some(Border {
                     color,
                     width_mm: (w as f32 / 100.0).clamp(0.1, 1.0),
                     radius_mm: (r as f32 / 100.0).clamp(0.0, 20.0),
-                    dotted: line <= 4,
+                    dotted: line.is_some_and(|l| l <= 4),
+                    line: line.is_some(),
+                    fill,
+                    angle: s.angle,
+                    shadow,
                 })
             }),
         })

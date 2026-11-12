@@ -613,3 +613,12 @@ See `figure.rs` for the byte layouts. In short:
   body lines down: lines narrow beside them and are set over them when no
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
+
+- **0.5.2** `/LayoutBox` `6006` is u8 flags then u16 left, right, top, bottom
+  (1/100 mm). `0401` #4 and #5 are the shadow's offset and #7 its colour
+  (types 4, 5, 8 show one; 4 dotted like its line). `0403` u32 fill type (1
+  colour, 2 gradient) and colour; `0404` u32, u32 angle, 8 bytes, u32 stop
+  count, then (u32 %, colour) stops. Box lines are as tall as their
+  characters plus 0.28 of the standard size, not on the page grid. `100B`
+  bit 1 (行間) wins over `100D` (行数) when 行数 puts lines more than twice
+  as far apart (a B4 handout: 20 lines vs 42 % 行間).
