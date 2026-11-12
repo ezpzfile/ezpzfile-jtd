@@ -6,7 +6,7 @@ fn main() {
     let bytes = std::fs::read(&a[1]).unwrap();
     let mut e = Editor::new(ezpzjtd_core::open(bytes.clone()).unwrap());
     e.select_all();
-    e.set_gothic(true);
+    match std::env::var("FONT") { Ok(f) => e.set_font(&f), Err(_) => e.set_gothic(true) }
     let s = ezpzjtd_core::save::save(&bytes, &e.doc).unwrap();
     std::fs::write(&a[2], &s.bytes).unwrap();
     let d2 = ezpzjtd_core::open(s.bytes).unwrap();

@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.4.7, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.4.8, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.4.7, reader + editor that saves back to `.jtd` (developer preview).
 
 | Version | What changed |
 |---|---|
+| 0.4.8 | **Fonts**: the font names the document uses are listed as they are; pick one and it is saved to `.jtd`. Rounded Gothic, textbook, brush and pop faces are drawn with similar free fonts. **Text box** text, **columns** (段組), tight line spacing and pictures on ruled lines now show. **Word export carries pictures** and font names |
 | 0.4.7 | With input methods that report every key to the IME (Korean and others), Backspace, Delete and arrows work again and syllables no longer fall apart into letters; tidier tool palette whose buttons no longer wrap |
 | 0.4.6 | **Vertical writing** shown and edited vertically (kanji and kana upright, 、。 at the top right, long vowels and brackets turned); Word export writes it vertically too |
 | 0.4.5 | No stray marks next to pictures; new screenshots |
@@ -85,7 +86,7 @@ Tested on public Ichitaro files published by Japanese ministries and others (Ich
 - ruled tables (merged cells, column widths, vertical and **horizontal rules**, rules between lines or through them, the 16 **line types**: thick, dotted, double and so on)
 - page setup: **paper size and orientation, margins, characters per line and lines per page**, base character size
 - font size, bold, italic, underline, colour, ruby (furigana), page breaks
-- typefaces: Mincho and Gothic (from the document's font table)
+- typefaces: Mincho, Gothic, rounded Gothic, textbook, brush and pop (by the document's font names; free look-alikes on ezpzfile.com)
 - **vertical writing** (縦組み): lines run top to bottom and follow each other right to left; kanji and kana stand upright, 、。 sit at the top right, long vowels, brackets and half-width text turn; arrow keys follow the vertical direction
 - **pictures**: GIF, JPEG, PNG and BMP pictures drawn where they sit on the page (`/Frame` frames and anchors in the text, checked against Ichitaro Viewer)
 - document properties, including the **original file path** that Ichitaro leaves inside files
@@ -93,11 +94,12 @@ Tested on public Ichitaro files published by Japanese ministries and others (Ich
 **Editing and saving**
 
 - edited files **save back to `.jtd`**, and Ichitaro Viewer opens them (see below); pictures stay
-- choose Mincho or Gothic and save it to `.jtd` (adds ＭＳ ゴシック to the font table)
+- choose any font of the document (or a usual Ichitaro one) and save it to `.jtd`
+- text box text, columns (段組) and pictures on ruled lines are shown
 - export: Word (`.docx`), PDF, HTML, plain text, Markdown, JSON
 
-**Not yet**: shapes and text boxes, pictures in Word export, headers and footers,
-columns (段組), Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
+**Not yet**: shapes (balloons, rounded frames and the like), editing text boxes and
+their borders, headers and footers, Ichitaro 7 and earlier formats (`.jaw`, `.jbw`, …). See the
 [roadmap](docs/PLAN.en.md) ([日本語](docs/PLAN.ja.md), [한국어](docs/PLAN.ko.md)).
 
 ## Editor

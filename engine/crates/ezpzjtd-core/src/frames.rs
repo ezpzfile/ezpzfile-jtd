@@ -33,6 +33,10 @@ pub struct Frame {
     pub y: i32,
     pub w: u32,
     pub h: u32,
+    /// Word [6] = 2: placed on the page (from the text area's top left of
+    /// the anchor's page) rather than from the anchor's line (word [6] = 1).
+    #[serde(default)]
+    pub fixed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -73,6 +77,7 @@ pub fn read_frames(cfb: &Cfb, base: &str) -> Vec<Frame> {
                 y: be32(r, 30).unwrap_or(0) as i32,
                 w: be32(r, 34).unwrap_or(0),
                 h: be32(r, 38).unwrap_or(0),
+                fixed: w(6) == 2,
             });
         }
         o += 4 + l;
@@ -194,4 +199,73 @@ mod tests {
         assert_eq!(anchor_id(&[0, 0x30, 0xffff, 0x507, 0x12, 5, 0]), Some(5));
         assert_eq!(anchor_id(&[0, 0x31, 0xffff, 0x507, 0x12, 5, 0]), None);
     }
+}
+
+/// A text box: its text and the space between its edge and the text
+/// (`/LayoutBox` record 6006, 1/100 mm; 0 when not found).
+#[derive(Debug, Clone, Default)]
+pub struct TextBox {
+    pub blocks: Vec<crate::doc::Block>,
+    /// left, right, top, bottom
+    pub pad: [u16; 4],
+}
+
+/// Inner margins of each box of `/LayoutBox`, in box order. Each box is
+/// `0201` (8 bytes), `6668` + u16 0 + u16 length holding records `60xx`
+/// (6006: u16 flags, then left, right, top, bottom), then `0401`, `0403`.
+fn box_pads(b: &[u8]) -> Vec<[u16; 4]> {
+    let mut out = Vec::new();
+    let mut o = 8usize;
+    let mut pad = None;
+    while o + 4 <= b.len() && out.len() < 4096 {
+        let tag = u16::from_be_bytes([b[o], b[o + 1]]);
+        let len = u16::from_be_bytes([b[o + 2], b[o + 3]]) as usize;
+        if tag == 0x0201 {
+            if let Some(p) = pad.take() {
+                out.push(p);
+            }
+            pad = Some([0u16; 4]);
+            o += 4 + len;
+        } else if tag == 0x6668 && o + 6 <= b.len() {
+            let glen = u16::from_be_bytes([b[o + 4], b[o + 5]]) as usize;
+            let (mut q, end) = (o + 6, (o + 6 + glen).min(b.len()));
+            while q + 4 <= end {
+                let t = u16::from_be_bytes([b[q], b[q + 1]]);
+                let l = u16::from_be_bytes([b[q + 2], b[q + 3]]) as usize;
+                if t == 0x6006 && l >= 10 && q + 14 <= end {
+                    let v = |k: usize| u16::from_be_bytes([b[q + 6 + k * 2], b[q + 7 + k * 2]]);
+                    if let Some(p) = pad.as_mut() {
+                        *p = [v(0), v(1), v(2), v(3)].map(|x| x.min(3000));
+                    }
+                }
+                q += 4 + l;
+            }
+            o = end;
+        } else {
+            o += 4 + len;
+        }
+    }
+    if let Some(p) = pad {
+        out.push(p);
+    }
+    out
+}
+
+/// The text boxes of a document, by box number.
+pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
+    let Some(raw) = cfb.read("/LayoutBoxText") else {
+        return Vec::new();
+    };
+    let Ok(subs) = crate::ssmg::substreams(&raw) else {
+        return Vec::new();
+    };
+    let pads = cfb.read("/LayoutBox").map(|b| box_pads(&b)).unwrap_or_default();
+    subs.iter()
+        .take(2048)
+        .enumerate()
+        .map(|(i, s)| TextBox {
+            blocks: crate::doc::blocks_from_textv(s, style_budget).unwrap_or_default(),
+            pad: pads.get(i).copied().unwrap_or([200, 200, 100, 100]),
+        })
+        .collect()
 }

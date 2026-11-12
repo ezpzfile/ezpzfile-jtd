@@ -279,6 +279,23 @@ impl JtdEditor {
     pub fn set_gothic(&mut self, on: bool) {
         self.ed.set_gothic(on)
     }
+    /// Face names the document uses, the standard face first, as
+    /// `[{"name", "face"}]` (face class: see `layout::face_class`).
+    #[wasm_bindgen(js_name = fontsJson)]
+    pub fn fonts_json(&self) -> String {
+        let list: Vec<serde_json::Value> = self
+            .ed
+            .font_names()
+            .into_iter()
+            .map(|n| serde_json::json!({ "face": ezpzjtd_core::layout::face_class(&n), "name": n }))
+            .collect();
+        serde_json::Value::Array(list).to_string()
+    }
+    /// Set the selection (or what is typed next) in face `name`.
+    #[wasm_bindgen(js_name = setFont)]
+    pub fn set_font(&mut self, name: &str) {
+        self.ed.set_font(name)
+    }
     #[wasm_bindgen(js_name = setColor)]
     pub fn set_color(&mut self, c: &str) {
         self.ed.set_color(if c.is_empty() {

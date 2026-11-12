@@ -546,3 +546,36 @@ Read from public files and checked against Ichitaro Viewer. Details and the read
   original file path (length-prefixed, Shift_JIS), then `u32` length (little-endian) and the
   picture file itself (GIF, JPEG, PNG, BMP). `EmbeddedPress` (`JSSnapShot32`) is a preview.
   **observed**
+
+## 13. Fonts, text boxes and columns **new (0.4.8)**
+
+- **Standard face.** Text whose style has no font of its own (id 3 absent)
+  is set in the first face of `/Font` whose charset is 128 (Shift_JIS) and
+  that is not one of Ichitaro's mark faces (`JustUnitMark`, `JustWabunMarkG`,
+  …). Checked with 一太郎ビューア by giving a face a look-alike that draws
+  differently: a table that starts `JustUnitMark, Times New Roman,
+  HG丸ｺﾞｼｯｸM-PRO` sets its plain text in the third face. Id 3 is a direct
+  index into `/Font`; a face chosen in the editor is saved there and the
+  viewer draws it. **ichitaro**
+- **Text boxes.** Frames of kind 2. `/LayoutBoxText` is an Ssmg container
+  with one `TextV.01` sub-stream per box; the *k*-th kind-2 frame of
+  `/Frame` shows the *k*-th sub-stream (the directory index of a sub-stream
+  is a layout number shared with `/FigureData/layout_data n`, not the
+  frame's item number). `/LayoutBox` holds one entry per box: `0201` (8
+  bytes), then `6668`, u16 0, u16 length and records `60xx`; record `6006`
+  is u16 flags and the inner margins left, right, top, bottom (1/100 mm).
+  **observed** on a school handout (44 boxes; sizes and texts agree)
+- **Frame placement.** Word [6] of a `0102` frame record: 1 = from the
+  anchor's line (as in §12), 2 = on the page (from the top left of the text
+  area of the anchor's page). In ruled forms an anchor can sit between a
+  line's end (`000E`) and the next line header with no text: it belongs to
+  that next line. **observed**
+- **Columns (段組).** `/DocumentViewStyles` record `1002`, group 3: bit 1
+  (u8) is the number of columns less one, bit 6 (ten u16) the gaps between
+  columns in 1/100 mm. 字数 counts one column. **observed** (a two-card memo
+  form: 1 and 7 mm). Group 2 bit 0 (u8) = 1 marks 縦組み in some older
+  files.
+- **Line height.** A line takes one pitch while its tallest character fits
+  in the pitch (65 lines of 11 pt on A4 with 15 mm margins stay one pitch
+  each in the viewer); record `100B` bit 1 is 行間 as 0.1 % of the
+  character size and follows from the pitch.

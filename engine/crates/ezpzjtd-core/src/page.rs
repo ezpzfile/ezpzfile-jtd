@@ -80,6 +80,9 @@ pub struct PageStyle {
     pub font: u32,
     /// 縦組み (vertical writing)
     pub vertical: bool,
+    /// 段組: columns and the gap between them (1/100 mm)
+    pub columns: u32,
+    pub col_gap: u32,
 }
 
 impl Default for PageStyle {
@@ -91,6 +94,8 @@ impl Default for PageStyle {
             lines: LINES,
             font: FONT,
             vertical: false,
+            columns: 1,
+            col_gap: 0,
         }
     }
 }
@@ -123,11 +128,30 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
                                 s.margins[k] = v;
                             }
                         }
-                        // group 3: bit4 (u8) 1 = 縦組み; the sizes of bits 0-3
-                        // are unknown, so only read it when they are absent
+                        // group 2 bit 0 (u8) 1: 縦組み in older files (school
+                        // handouts written vertically)
+                        if f[0] == Some(1) {
+                            s.vertical = true;
+                        }
+                        // group 3: bit1 (u8) columns less one (段組; 1 on a
+                        // two-memo form, 2 on an A3 handout in three
+                        // columns), bit4 (u8) 1 = 縦組み, bit6 ten u16: the
+                        // gaps between columns (1/100 mm). The sizes of bits
+                        // 0, 2, 3 and 5 are unknown, so stop at them.
                         if let Some(&m) = p.get(i) {
-                            if m & 0x10 != 0 && m & 0x0f == 0 {
-                                s.vertical = p.get(i + 1) == Some(&1);
+                            let mut j = i + 1;
+                            if m & 0x2d == 0 {
+                                if m & 0x02 != 0 {
+                                    s.columns = p.get(j).map_or(1, |&c| c as u32 + 1).min(10);
+                                    j += 1;
+                                }
+                                if m & 0x10 != 0 {
+                                    s.vertical = p.get(j) == Some(&1);
+                                    j += 1;
+                                }
+                                if m & 0x40 != 0 {
+                                    s.col_gap = u16_at(p, j).unwrap_or(0) as u32;
+                                }
                             }
                         }
                     }
@@ -200,9 +224,10 @@ impl PageStyle {
             } else {
                 10.5
             },
-            gothic: Vec::new(),
-            frames: Vec::new(),
             vertical: self.vertical,
+            columns: self.columns.clamp(1, 10),
+            col_gap_mm: mm(self.col_gap.min(10000)),
+            ..PageSetup::default()
         }
     }
 }

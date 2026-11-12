@@ -317,6 +317,9 @@ pub struct CaretStyle {
     pub align: Align,
     /// The text is set in a Gothic face.
     pub gothic: bool,
+    /// Face name of the text (the document's standard face when the text
+    /// has none of its own).
+    pub font: String,
 }
 
 pub const SIZES: [f32; 22] = [
@@ -357,8 +360,10 @@ impl Editor {
         }
         let flat = flatten(&doc.sheets[0].blocks);
         let mut setup = doc.page.clone().unwrap_or_default();
-        setup.gothic = gothic_fonts(&doc);
+        setup.fill_fonts(&doc.fonts);
         setup.frames = picture_frames(&doc);
+        setup.fixed = doc.frames.iter().filter(|f| f.fixed).map(|f| f.id).collect();
+        setup.boxes = crate::layout::Boxes(std::sync::Arc::new(crate::layout::box_items(&doc, &setup)));
         Editor {
             doc,
             sheet: 0,
@@ -818,7 +823,8 @@ impl Editor {
             size: s.size_pt.unwrap_or(self.setup.font_pt),
             color: s.color.clone(),
             align: self.para(self.caret.p).align,
-            gothic: s.font.is_some_and(|f| self.setup.gothic.contains(&f)),
+            gothic: matches!(self.setup.face_of(s.font), 1 | 2 | 5),
+            font: self.font_name(s.font),
         }
     }
 
@@ -891,13 +897,66 @@ impl Editor {
                 Some(i) => i,
                 None => {
                     self.doc.fonts.push(crate::doc::FontInfo { name: "ＭＳ ゴシック".into(), charset: 0x80 });
-                    self.setup.gothic = gothic_fonts(&self.doc);
+                    self.setup.fill_fonts(&self.doc.fonts);
                     self.doc.fonts.len() - 1
                 }
             };
             Some(i as u16)
         } else {
             None
+        };
+        self.format(move |s| s.font = font);
+    }
+
+    /// Face name of `/Font` index `font`, or of the standard face.
+    pub fn font_name(&self, font: Option<u16>) -> String {
+        font.filter(|&f| (f as usize) < self.doc.fonts.len())
+            .or(self.setup.base_font)
+            .and_then(|f| self.doc.fonts.get(f as usize))
+            .map(|f| f.name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Face names the document uses, the standard face first, without
+    /// Ichitaro's mark faces and without repeats.
+    pub fn font_names(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let base = self.font_name(None);
+        if !base.is_empty() {
+            out.push(base);
+        }
+        for f in &self.doc.fonts {
+            if !crate::layout::is_mark_font(&f.name) && !out.contains(&f.name) {
+                out.push(f.name.clone());
+            }
+        }
+        out
+    }
+
+    /// Set the selection (or the text about to be typed) in face `name`.
+    /// The standard face clears the run's own face; any other face is
+    /// looked up in the font table and added to it when missing.
+    pub fn set_font(&mut self, name: &str) {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 31 {
+            return;
+        }
+        let font = if self.setup.base_font.and_then(|b| self.doc.fonts.get(b as usize)).is_some_and(|f| f.name == name) {
+            None
+        } else {
+            let i = match self.doc.fonts.iter().position(|f| f.name == name) {
+                Some(i) => i,
+                None => {
+                    if self.doc.fonts.len() >= 255 {
+                        return;
+                    }
+                    let charset = if name.is_ascii() { 0 } else { 0x80 };
+                    self.doc.fonts.push(crate::doc::FontInfo { name: name.into(), charset });
+                    self.setup.fill_fonts(&self.doc.fonts);
+                    self.doc.fonts.len() - 1
+                }
+            };
+            Some(i as u16)
         };
         self.format(move |s| s.font = font);
     }
@@ -967,6 +1026,7 @@ impl Editor {
             rules,
             feed: None,
             kinds: Vec::new(),
+            frames: Vec::new(),
             src: Default::default(),
         }
     }
@@ -1008,6 +1068,7 @@ impl Editor {
             rules,
             feed: None,
             kinds: Vec::new(),
+            frames: Vec::new(),
             src: Default::default(),
         }
     }

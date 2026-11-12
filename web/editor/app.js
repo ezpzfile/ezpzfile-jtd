@@ -11,6 +11,24 @@ const PT = 96 / 72; // CSS px per point at 100 %
 const FONT_STACK = '"Hiragino Mincho ProN","Hiragino Mincho Pro","Yu Mincho","YuMincho","MS Mincho","Noto Serif CJK JP","Noto Serif JP",serif';
 // text the document sets in a Gothic face (ＭＳ ゴシック, ゴシック体, …)
 const GOTHIC_STACK = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","YuGothic","MS Gothic","Noto Sans CJK JP","Noto Sans JP",sans-serif';
+/**
+ * Faces by class (engine `face_class`): 0 Mincho, 1 Gothic, 2 rounded Gothic,
+ * 3 textbook, 4 brush, 5 pop. The free look-alike comes first so every
+ * computer draws the same kind of face; the Windows face follows for when
+ * the free one cannot be fetched (the editor saved as a file on its own).
+ */
+const FACE_STACKS = [
+  FONT_STACK,
+  GOTHIC_STACK,
+  '"Zen Maru Gothic","HG丸ｺﾞｼｯｸM-PRO","Hiragino Maru Gothic ProN",' + GOTHIC_STACK,
+  '"Klee One","UD デジタル 教科書体 N-R","HG教科書体",' + FONT_STACK,
+  '"Yuji Syuku","HG正楷書体-PRO","HG行書体",' + FONT_STACK,
+  '"Mochiy Pop One","HGP創英角ﾎﾟｯﾌﾟ体","HG創英角ﾎﾟｯﾌﾟ体",' + GOTHIC_STACK,
+];
+/** The free faces, kept on ezpzfile.com in pieces by character range (OFL). */
+const WEB_FACES = { 2: ["zen-maru-gothic", "Zen Maru Gothic"], 3: ["klee-one", "Klee One"], 4: ["yuji-syuku", "Yuji Syuku"], 5: ["mochiy-pop-one", "Mochiy Pop One"] };
+/** Faces offered besides the document's own (Ichitaro's usual ones). */
+const MORE_FONTS = ["ＭＳ 明朝", "ＭＳ ゴシック", "HG丸ｺﾞｼｯｸM-PRO", "HG教科書体", "HG正楷書体-PRO", "HG創英角ﾎﾟｯﾌﾟ体"];
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -142,6 +160,9 @@ function fitNarrow() {
   if (sc.clientWidth && sc.clientWidth < pageW + 48) rezoom(Math.max(0.4, (sc.clientWidth - 32) / pageW));
 }
 
+/** After a face was added to the document, list it with the document's faces. */
+function fillFontsKeep() { fillFonts(); }
+
 function setEditor(ed, name) {
   dropPictures();
   if (S.ed) S.ed.free();
@@ -151,6 +172,7 @@ function setEditor(ed, name) {
   S.name = name;
   S.setup = null;
   S.ed.setShowMarks(S.marks);
+  fillFonts();
   paperNote();
   $("#pages").replaceChildren();
   S.pages = [];
@@ -297,6 +319,45 @@ function picture(id) {
   }
   return S.pics.get(id);
 }
+// ------------------------------------------------------------------ free faces
+const faceState = {}; // class → { link, chars: Set, timer }
+/** Fetch the pieces of a free face that the drawn text needs, then draw again. */
+function wantFace(f, text) {
+  if (!/^https?:$/.test(location.protocol)) return;
+  let st = faceState[f];
+  if (!st) {
+    const [slug] = WEB_FACES[f];
+    const link = el("link", { rel: "stylesheet", href: `/vendor/gfonts/${slug}/font.css` });
+    document.head.append(link);
+    st = faceState[f] = { chars: new Set(), asked: new Set(), timer: 0 };
+  }
+  let added = false;
+  for (const ch of text) if (!st.asked.has(ch)) { st.chars.add(ch); added = true; }
+  if (!added || st.timer) return;
+  st.timer = setTimeout(() => {
+    st.timer = 0;
+    const want = Array.from(st.chars).join("");
+    for (const ch of st.chars) st.asked.add(ch);
+    st.chars.clear();
+    if (!document.fonts || !want) return;
+    document.fonts.load(`16px "${WEB_FACES[f][1]}"`, want).then((got) => { if (got.length && S.ed) refresh({ scroll: false }); }, () => {});
+  }, 30);
+}
+
+/** The face list: the document's faces (standard one first), then the usual ones. */
+function fillFonts() {
+  let mine = [];
+  try { mine = S.ed ? JSON.parse(S.ed.fontsJson()) : []; } catch (e) { console.warn("fonts", e); mine = []; }
+  const names = mine.map((f) => f.name);
+  for (const sel of $$(".font-select")) {
+    const opts = [];
+    if (names.length) opts.push(el("optgroup", { label: tr("この文書のフォント") }, ...names.map((n) => el("option", { value: n, text: n }))));
+    const more = MORE_FONTS.filter((n) => !names.includes(n));
+    if (more.length) opts.push(el("optgroup", { label: tr("ほかのフォント") }, ...more.map((n) => el("option", { value: n, text: n }))));
+    sel.replaceChildren(...opts);
+  }
+}
+
 function dropPictures() {
   if (S.pics) for (const img of S.pics.values()) URL.revokeObjectURL(img.dataset.url);
   S.pics = null;
@@ -335,7 +396,8 @@ function paintItems(g, data, marks) {
   g.textBaseline = "alphabetic";
   for (const it of data.items) {
     if (it.t === "Text") {
-      g.font = `${it.i ? "italic " : ""}${it.b ? "bold " : ""}${it.size}px ${it.g ? GOTHIC_STACK : FONT_STACK}`;
+      g.font = `${it.i ? "italic " : ""}${it.b ? "bold " : ""}${it.size}px ${FACE_STACKS[it.f || (it.g ? 1 : 0)] || FONT_STACK}`;
+      if (WEB_FACES[it.f]) wantFace(it.f, it.s);
       g.fillStyle = it.color || "#111";
       const chars = Array.from(it.s);
       for (let k = 0; k < chars.length; k++) {
@@ -531,7 +593,10 @@ function updateStyleUi() {
   const size = String(s.size);
   for (const sel of $$(".size-select")) { if (!Array.from(sel.options).some((o) => o.value === size)) sel.append(el("option", { value: size, text: size })); sel.value = size; }
   $$(".swatchline").forEach((i) => (i.style.background = s.color || "#0b1020"));
-  $$(".font-select").forEach((f) => (f.value = s.gothic ? "gothic" : "mincho"));
+  for (const f of $$(".font-select")) {
+    if (s.font && !Array.from(f.options).some((o) => o.value === s.font)) f.append(el("option", { value: s.font, text: s.font }));
+    f.value = s.font || "";
+  }
   const sel = S.ed.selectedText();
   $("#cnt-sel").textContent = sel ? Array.from(sel.replace(/\s/g, "")).length.toLocaleString() : "0";
   $("#cnt-all").textContent = S.status.chars.toLocaleString();
@@ -644,7 +709,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.7")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.8")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -901,8 +966,8 @@ function buildToolbar() {
     ibtn("find", tr("検索"), "search"), ibtn("marks", tr("編集記号"), "pilcrow"), vsep(),
     ibtn("jumpPalette", tr("ジャンプパレット"), "panel-left"), ibtn("toolPalette", tr("ツールパレット"), "panel-right"));
 
-  const fontSel = el("select", { class: "font-select", "aria-label": tr("フォント") }, el("option", { value: "mincho", text: tr("明朝") }), el("option", { value: "gothic", text: tr("ゴシック") }));
-  fontSel.addEventListener("change", () => { if (!S.hasDoc) return; S.ed.setGothic(fontSel.value === "gothic"); HOST.once("format", { op: "font" }); refresh(); focusInput(); });
+  const fontSel = el("select", { class: "font-select", "aria-label": tr("フォント") });
+  fontSel.addEventListener("change", () => { if (!S.hasDoc || !fontSel.value) return; S.ed.setFont(fontSel.value); HOST.once("format", { op: "font" }); fillFontsKeep(); refresh(); focusInput(); });
   const font = el("span", { class: "fill", title: tr("フォント") }, fontSel);
   $("#formatbar").replaceChildren(
     font, sizeControl(), vsep(),

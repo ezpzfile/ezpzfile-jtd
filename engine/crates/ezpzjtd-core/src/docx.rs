@@ -92,8 +92,20 @@ fn rpr(r: &Run, setup: &PageSetup) -> String {
     let base = setup.font_pt;
     let s = &r.style;
     let mut x = String::new();
-    if s.font.is_some_and(|f| setup.gothic.contains(&f)) {
-        x.push_str("<w:rFonts w:ascii=\"ＭＳ ゴシック\" w:hAnsi=\"ＭＳ ゴシック\" w:eastAsia=\"ＭＳ ゴシック\"/>");
+    // The run's own face (not the standard one) for all of its text, and
+    // the second face (id 8) for half-width text when it has one.
+    let name = |f: Option<u16>| f.and_then(|f| setup.font_names.get(f as usize)).filter(|n| !n.is_empty());
+    let own = name(s.font).filter(|_| s.font != setup.base_font);
+    let latin = name(s.font_latin).or(own);
+    if own.is_some() || name(s.font_latin).is_some() {
+        x.push_str("<w:rFonts");
+        if let Some(l) = latin {
+            x.push_str(&format!(" w:ascii=\"{0}\" w:hAnsi=\"{0}\"", esc(l)));
+        }
+        if let Some(e) = own {
+            x.push_str(&format!(" w:eastAsia=\"{}\"", esc(e)));
+        }
+        x.push_str("/>");
     }
     if s.bold == Some(true) {
         x.push_str("<w:b/><w:bCs/>");
@@ -140,7 +152,56 @@ fn text_runs(text: &str, props: &str) -> String {
     out
 }
 
-fn para_xml(p: &Paragraph, setup: &PageSetup) -> String {
+/// Pictures written so far: the frame's picture goes to `word/media`.
+struct Cx<'a> {
+    doc: &'a Document,
+    used: Vec<(&'a crate::frames::Picture, &'static str)>,
+}
+
+fn ext_of(mime: &str) -> &'static str {
+    match mime {
+        "image/png" => "png",
+        "image/jpeg" => "jpeg",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        _ => "",
+    }
+}
+
+/// A picture anchored to its paragraph where Ichitaro puts it: `x` from the
+/// left of the text area, `y` from the top of the anchor's line, behind the
+/// text the way the editor draws it.
+fn picture_xml(id: u16, cx: &mut Cx, in_cell: bool) -> String {
+    let Some(f) = cx.doc.frames.iter().find(|f| f.id == id && f.kind == 1) else {
+        return String::new();
+    };
+    let Some(pic) = cx.doc.pictures.iter().find(|p| p.item == id) else {
+        return String::new();
+    };
+    let ext = ext_of(pic.mime);
+    if ext.is_empty() || pic.data.is_empty() {
+        return String::new();
+    }
+    cx.used.push((pic, ext));
+    let n = cx.used.len();
+    let rid = format!("rIdImg{n}");
+    let emu = |v: i64| v * 360; // 1/100 mm
+    let (x, y, w, h) = (emu(f.x as i64), emu(f.y as i64), emu(f.w as i64).max(1), emu(f.h as i64).max(1));
+    // a frame on the page is measured from the margins, the rest from the anchor's line
+    let (hrel, vrel) = if f.fixed { ("margin", "margin") } else { ("column", if in_cell { "paragraph" } else { "line" }) };
+    let lic = if in_cell { "0" } else { "1" };
+    format!(
+        "<w:r><w:drawing><wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"{n}\" behindDoc=\"1\" locked=\"0\" layoutInCell=\"{lic}\" allowOverlap=\"1\">\
+<wp:simplePos x=\"0\" y=\"0\"/><wp:positionH relativeFrom=\"{hrel}\"><wp:posOffset>{x}</wp:posOffset></wp:positionH><wp:positionV relativeFrom=\"{vrel}\"><wp:posOffset>{y}</wp:posOffset></wp:positionV>\
+<wp:extent cx=\"{w}\" cy=\"{h}\"/><wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapNone/><wp:docPr id=\"{n}\" name=\"Picture {n}\"/>\
+<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>\
+<a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">\
+<pic:nvPicPr><pic:cNvPr id=\"{n}\" name=\"image{n}.{ext}\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"{rid}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
+<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{w}\" cy=\"{h}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"
+    )
+}
+
+fn para_xml(p: &Paragraph, setup: &PageSetup, cx: &mut Cx) -> String {
     let base = setup.font_pt;
     let tw = |pt: f32| (pt * 20.0).round() as i32;
     let mut ppr = String::new();
@@ -177,6 +238,9 @@ fn para_xml(p: &Paragraph, setup: &PageSetup) -> String {
     if !ppr.is_empty() {
         x.push_str(&format!("<w:pPr>{ppr}</w:pPr>"));
     }
+    for &id in &p.frames {
+        x.push_str(&picture_xml(id, cx, false));
+    }
     for r in &p.runs {
         let props = rpr(r, setup);
         match &r.ruby {
@@ -200,7 +264,7 @@ fn para_xml(p: &Paragraph, setup: &PageSetup) -> String {
 
 const NO_BORDERS: &str = "<w:tcBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/></w:tcBorders>";
 
-fn table_xml(t: &Table, setup: &PageSetup) -> String {
+fn table_xml(t: &Table, setup: &PageSetup, cx: &mut Cx) -> String {
     let rows: Vec<Vec<(u16, u16)>> = t
         .rows
         .iter()
@@ -241,6 +305,11 @@ fn table_xml(t: &Table, setup: &PageSetup) -> String {
         } else {
             NO_BORDERS.to_string()
         };
+        // pictures anchored on this line go into its first cell, placed on the page
+        let mut row_pics = String::new();
+        for &id in &r.frames {
+            row_pics.push_str(&picture_xml(id, cx, true));
+        }
         let mut at = 0usize;
         let gap = |n: usize, x: &mut String, a: usize| {
             let w: f32 = (a..a + n)
@@ -268,10 +337,15 @@ fn table_xml(t: &Table, setup: &PageSetup) -> String {
             x.push_str(&borders);
             x.push_str("</w:tcPr>");
             if c.paragraphs.is_empty() {
-                x.push_str("<w:p/>");
+                x.push_str(&format!("<w:p>{}</w:p>", std::mem::take(&mut row_pics)));
             }
             for p in &c.paragraphs {
-                x.push_str(&para_xml(p, setup));
+                let mut px = para_xml(p, setup, cx);
+                if !row_pics.is_empty() {
+                    let at = px.find("</w:pPr>").map_or(5, |i| i + 8);
+                    px.insert_str(at, &std::mem::take(&mut row_pics));
+                }
+                x.push_str(&px);
             }
             x.push_str("</w:tc>");
             at = a + span;
@@ -286,10 +360,16 @@ fn table_xml(t: &Table, setup: &PageSetup) -> String {
 }
 
 pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> String {
-    let mut own;
-    let setup = if setup.gothic.is_empty() {
-        own = setup.clone();
-        own.gothic = crate::edit::gothic_fonts(doc);
+    let mut cx = Cx { doc, used: Vec::new() };
+    document_with(doc, sheet, setup, &mut cx)
+}
+
+fn document_with<'a>(doc: &'a Document, sheet: Option<usize>, setup: &PageSetup, cx: &mut Cx<'a>) -> String {
+    let own;
+    let setup = if setup.font_names.len() != doc.fonts.len() {
+        let mut s = setup.clone();
+        s.fill_fonts(&doc.fonts);
+        own = s;
         &own
     } else {
         setup
@@ -305,8 +385,8 @@ pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> 
         }
         for b in &doc.sheets[si].blocks {
             match b {
-                Block::Paragraph(p) => body.push_str(&para_xml(p, setup)),
-                Block::Table(t) => body.push_str(&table_xml(t, setup)),
+                Block::Paragraph(p) => body.push_str(&para_xml(p, setup, cx)),
+                Block::Table(t) => body.push_str(&table_xml(t, setup, cx)),
             }
         }
     }
@@ -325,7 +405,7 @@ pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> 
     };
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
-<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}\
+<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}\
 <w:sectPr><w:pgSz w:w=\"{pw}\" w:h=\"{ph}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\" w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/>{dir}<w:docGrid w:type=\"lines\" w:linePitch=\"{}\"/></w:sectPr></w:body></w:document>",
         tw(setup.pitch()),
     )
@@ -333,13 +413,24 @@ pub fn document_xml(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> 
 
 pub fn to_docx(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> Vec<u8> {
     let hp = (setup.font_pt * 2.0).round() as u32;
-    let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#;
+    let mut cx = Cx { doc, used: Vec::new() };
+    let document = document_with(doc, sheet, setup, &mut cx);
+    let mut exts: Vec<&str> = cx.used.iter().map(|u| u.1).collect();
+    exts.sort();
+    exts.dedup();
+    let defaults: String = exts.iter().map(|e| format!("<Default Extension=\"{e}\" ContentType=\"image/{e}\"/>")).collect();
+    let pic_rels: String = (1..=cx.used.len())
+        .map(|n| format!("<Relationship Id=\"rIdImg{n}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image{n}.{}\"/>", cx.used[n - 1].1))
+        .collect();
+    let base = setup.base_font.and_then(|i| doc.fonts.get(i as usize)).or_else(|| crate::layout::base_font(&doc.fonts).and_then(|i| doc.fonts.get(i as usize)));
+    let east = base.filter(|f| f.charset == 0x80).map_or("ＭＳ 明朝".to_string(), |f| esc(&f.name));
+    let content_types = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>{defaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#);
     let rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#;
-    let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
+    let doc_rels = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>{pic_rels}</Relationships>"#);
     // Underline trailing spaces like Ichitaro does (form blanks "氏名＿＿＿").
     let settings = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat><w:ulTrailSpace/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#;
     let styles = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Century" w:hAnsi="Century" w:eastAsia="ＭＳ 明朝" w:cs="Times New Roman"/><w:kern w:val="2"/><w:sz w:val="{hp}"/><w:szCs w:val="{hp}"/><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:widowControl w:val="0"/><w:jc w:val="both"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="a"><w:name w:val="Normal"/></w:style><w:style w:type="table" w:default="1" w:styleId="t"><w:name w:val="Normal Table"/><w:tblPr><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="99" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="99" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>"#
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Century" w:hAnsi="Century" w:eastAsia="{east}" w:cs="Times New Roman"/><w:kern w:val="2"/><w:sz w:val="{hp}"/><w:szCs w:val="{hp}"/><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:widowControl w:val="0"/><w:jc w:val="both"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="a"><w:name w:val="Normal"/></w:style><w:style w:type="table" w:default="1" w:styleId="t"><w:name w:val="Normal Table"/><w:tblPr><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="99" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="99" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>"#
     );
     let title = doc.summary.title.clone().unwrap_or_default();
     let core = format!(
@@ -347,19 +438,21 @@ pub fn to_docx(doc: &Document, sheet: Option<usize>, setup: &PageSetup) -> Vec<u
         esc(&title)
     );
     let app = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>EZPZ File JTD</Application></Properties>"#;
-    zip(&[
-        ("[Content_Types].xml", content_types.as_bytes().to_vec()),
+    let names: Vec<String> = (1..=cx.used.len()).map(|n| format!("word/media/image{n}.{}", cx.used[n - 1].1)).collect();
+    let mut files: Vec<(&str, Vec<u8>)> = vec![
+        ("[Content_Types].xml", content_types.into_bytes()),
         ("_rels/.rels", rels.as_bytes().to_vec()),
-        ("word/_rels/document.xml.rels", doc_rels.as_bytes().to_vec()),
-        (
-            "word/document.xml",
-            document_xml(doc, sheet, setup).into_bytes(),
-        ),
+        ("word/_rels/document.xml.rels", doc_rels.into_bytes()),
+        ("word/document.xml", document.into_bytes()),
         ("word/styles.xml", styles.into_bytes()),
         ("word/settings.xml", settings.as_bytes().to_vec()),
         ("docProps/core.xml", core.into_bytes()),
         ("docProps/app.xml", app.as_bytes().to_vec()),
-    ])
+    ];
+    for (n, (pic, _)) in names.iter().zip(&cx.used) {
+        files.push((n.as_str(), pic.data.clone()));
+    }
+    zip(&files)
 }
 
 #[cfg(test)]

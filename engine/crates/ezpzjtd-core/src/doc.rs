@@ -229,6 +229,11 @@ pub struct Row {
     /// Line types (線種) of `rules`, item by item; empty when all are plain.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<RuleKinds>,
+    /// Frames anchored on this text line (between the previous line's end
+    /// and this line's header, the way a ruled form keeps them), drawn from
+    /// the line's top. See `frames.rs`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub frames: Vec<u16>,
     #[serde(skip)]
     pub src: Src<RowSrc>,
 }
@@ -486,6 +491,10 @@ pub struct Document {
     pub frames: Vec<crate::frames::Frame>,
     #[serde(skip)]
     pub pictures: Vec<crate::frames::Picture>,
+    /// Text boxes in `/LayoutBoxText` order: the k-th frame of kind 2 shows
+    /// the k-th box. Shown, not edited.
+    #[serde(skip)]
+    pub boxes: Vec<crate::frames::TextBox>,
     pub warnings: Vec<String>,
     /// Page setup (文書スタイル) stored in the file, if it could be read.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -507,6 +516,7 @@ impl Document {
             objects: Vec::new(),
             frames: Vec::new(),
             pictures: Vec::new(),
+            boxes: Vec::new(),
             warnings: Vec::new(),
             page: None,
         }
@@ -683,6 +693,7 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
 
     let frames = crate::frames::read_frames(&cfb, "");
     let pictures = crate::frames::read_pictures(&cfb, &frames, limits.max_bytes);
+    let boxes = if frames.iter().any(|f| f.kind == 2) { crate::frames::read_boxes(&cfb, &mut budget.style_left) } else { Vec::new() };
     Ok(Document {
         format,
         summary,
@@ -691,6 +702,7 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
         objects,
         frames,
         pictures,
+        boxes,
         warnings,
         page,
     })
@@ -738,6 +750,20 @@ fn read_sheet(
 }
 
 /// Build blocks from the raw bytes of one `/DocumentText` stream.
+/// Blocks of one `TextV.01` text (a text box of `/LayoutBoxText`).
+pub fn blocks_from_textv(sub: &[u8], style_budget: &mut usize) -> Option<Vec<Block>> {
+    if !sub.starts_with(b"TextV.01") || sub.len() < 12 {
+        return None;
+    }
+    let n = u32::from_be_bytes([sub[8], sub[9], sub[10], sub[11]]) as usize;
+    let end = n.saturating_mul(2).saturating_add(12).min(sub.len());
+    let units: Vec<u16> = sub[12..end].chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+    let spans = style::spans_with(&sub[end..], units.len(), style_budget).ok()?;
+    let map = StyleMap::new(spans);
+    let mut w = Vec::new();
+    Some(build_blocks(&units, &map, &mut w, false).0)
+}
+
 pub fn blocks_from_document_text(raw: &[u8], warnings: &mut Vec<String>) -> Result<Vec<Block>> {
     let (units, map) = units_and_styles(raw)?;
     Ok(build_blocks(&units, &map, warnings, false).0)
@@ -968,6 +994,8 @@ fn push_table(blocks: &mut Vec<Block>, t: Table) {
         for r in t.rows {
             let row_src = r.src.get().cloned();
             let feed = r.feed;
+            let mut frames = r.frames;
+            let at = blocks.len();
             for c in r.cells {
                 if c.paragraphs.is_empty() {
                     // an empty line of the box still takes a line
@@ -992,6 +1020,12 @@ fn push_table(blocks: &mut Vec<Block>, t: Table) {
                 for mut p in c.paragraphs {
                     p.feed = feed;
                     blocks.push(Block::Paragraph(p));
+                }
+            }
+            if !frames.is_empty() {
+                if let Some(Block::Paragraph(p)) = blocks.get_mut(at) {
+                    frames.append(&mut p.frames);
+                    p.frames = frames;
                 }
             }
         }
@@ -1115,12 +1149,16 @@ fn build_blocks(
                     b.close_row();
                     let t = b.table.get_or_insert_with(Table::default);
                     t.width = t.width.max(width);
+                    // anchors that came with no text since the last line
+                    // belong to this line
+                    let frames = if b.para.runs.is_empty() { std::mem::take(&mut b.para.frames) } else { Vec::new() };
                     b.row = Some(Row {
                         cells: Vec::new(),
                         x0,
                         rules,
                         feed,
                         kinds,
+                        frames,
                         src: if track {
                             Src(Some(Box::new(RowSrc {
                                 header: (start, end - start),

@@ -47,6 +47,12 @@ fn to_units(b: &[u8]) -> Vec<u16> {
 
 /// Split an Ssmg container into its sub-streams.
 pub fn substreams(b: &[u8]) -> Result<Vec<Vec<u8>>> {
+    Ok(substreams_indexed(b)?.into_iter().map(|(_, d)| d).collect())
+}
+
+/// [`substreams`] with the index each sub-stream has in the directory (a
+/// text box's number in `/LayoutBoxText`).
+pub fn substreams_indexed(b: &[u8]) -> Result<Vec<(u32, Vec<u8>)>> {
     if b.len() < 20 || &b[..8] != MAGIC {
         return Err(Error::NotJtd(
             "DocumentText does not start with SsmgV.01".into(),
@@ -91,7 +97,7 @@ pub fn substreams(b: &[u8]) -> Result<Vec<Vec<u8>>> {
     let mut out = Vec::with_capacity(sub_count.min(b.len() / 20 + 1));
     let mut o = dir;
     for _ in 0..sub_count {
-        let (Some(_idx), Some(len), Some(n)) = (be32(b, o), be32(b, o + 8), be32(b, o + 12)) else {
+        let (Some(idx), Some(len), Some(n)) = (be32(b, o), be32(b, o + 8), be32(b, o + 12)) else {
             return Err(Error::Corrupt("truncated Ssmg directory".into()));
         };
         let listed = b.len().saturating_sub(o + 20) / 4;
@@ -125,7 +131,7 @@ pub fn substreams(b: &[u8]) -> Result<Vec<Vec<u8>>> {
             data.extend_from_slice(&blk[..take]);
         }
         total += data.len();
-        out.push(data);
+        out.push((idx, data));
         o += 20 + n * 4;
     }
     Ok(out)

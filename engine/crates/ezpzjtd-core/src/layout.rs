@@ -32,16 +32,45 @@ pub struct PageSetup {
     /// as Mincho. Filled from the document's font table, not saved.
     #[serde(skip)]
     pub gothic: Vec<u16>,
+    /// Face class of each `/Font` index (see [`face_class`]), and the face
+    /// used for text without a font of its own. Filled from the document.
+    #[serde(skip)]
+    pub faces: Vec<u8>,
+    #[serde(skip)]
+    pub base_face: u8,
+    /// Face names by `/Font` index and the document's standard face, for
+    /// Word export. Filled from the document.
+    #[serde(skip)]
+    pub font_names: Vec<String>,
+    #[serde(skip)]
+    pub base_font: Option<u16>,
     /// Picture frames by id, `(id, x, y, w, h)` in 1/100 mm: drawn where
     /// their anchor's line is (see `frames.rs`). Filled from the document.
     #[serde(skip)]
     pub frames: Vec<(u16, i32, i32, u32, u32)>,
+    /// Text boxes by frame id: `(id, x, y)` of the frame (1/100 mm, like
+    /// `frames`) and the box's text laid out from the box's top left.
+    #[serde(skip)]
+    pub boxes: Boxes,
+    /// Frames placed on the page rather than from their anchor's line.
+    #[serde(skip)]
+    pub fixed: Vec<u16>,
     /// 縦組み: the page is laid out turned a quarter turn (width and height
     /// swapped, the right margin on top), so lines run top to bottom and
     /// follow each other from right to left once the drawing is turned back.
     /// The editor turns it back when drawing (see `PageStyle::setup`).
     #[serde(default)]
     pub vertical: bool,
+    /// 段組: columns and the gap between them (mm). Lines fill a column,
+    /// then the next; 字数 counts one column.
+    #[serde(default = "one_col")]
+    pub columns: u32,
+    #[serde(default)]
+    pub col_gap_mm: f32,
+}
+
+fn one_col() -> u32 {
+    1
 }
 
 fn thirty() -> f32 {
@@ -61,8 +90,16 @@ impl Default for PageSetup {
             lines_per_page: 40,
             font_pt: 10.5,
             gothic: Vec::new(),
+            faces: Vec::new(),
+            base_face: 0,
+            font_names: Vec::new(),
+            base_font: None,
             frames: Vec::new(),
+            boxes: Default::default(),
+            fixed: Vec::new(),
             vertical: false,
+            columns: 1,
+            col_gap_mm: 0.0,
         }
     }
 }
@@ -117,8 +154,16 @@ impl PageSetup {
             lines_per_page: self.lines_per_page.clamp(2, 400),
             font_pt: fin(self.font_pt, 4.0, 100.0, d.font_pt),
             gothic: self.gothic.clone(),
+            faces: self.faces.clone(),
+            base_face: self.base_face,
+            font_names: self.font_names.clone(),
+            base_font: self.base_font,
             frames: self.frames.clone(),
+            boxes: self.boxes.clone(),
+            fixed: self.fixed.clone(),
             vertical: self.vertical,
+            columns: self.columns.clamp(1, 10),
+            col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -189,6 +234,10 @@ pub enum Item {
         /// Gothic (sans) face instead of Mincho.
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         g: bool,
+        /// Face class (see [`face_class`]): 0 Mincho, 1 Gothic, 2 rounded
+        /// Gothic, 3 textbook, 4 brush, 5 pop.
+        #[serde(skip_serializing_if = "is_zero")]
+        f: u8,
         #[serde(skip_serializing_if = "Option::is_none")]
         color: Option<String>,
         /// Half-width characters are drawn left-aligned in a half cell.
@@ -299,10 +348,64 @@ struct Ctx<'a> {
     page: usize,
     y: f32,
     max_pages: usize,
+    /// 段組: columns of the page, the current one, its distance from the
+    /// first, and where each column's items and lines start (moved right
+    /// once the layout is done).
+    cols: u32,
+    col: u32,
+    col_step: f32,
+    dx: f32,
+    segs: Vec<(usize, usize, usize, f32)>,
 }
 
 impl<'a> Ctx<'a> {
+    /// The next column, or the next page after the last column.
     fn new_page(&mut self) {
+        if self.col + 1 < self.cols && !self.out.pages.is_empty() {
+            self.col += 1;
+            self.dx = self.col as f32 * self.col_step;
+            let n = self.out.pages[self.page].items.len();
+            self.segs.push((self.page, n, self.out.lines.len(), self.dx));
+            self.y = self.setup.top();
+            return;
+        }
+        self.col = 0;
+        self.dx = 0.0;
+        self.real_new_page();
+        self.segs.push((self.page, self.out.pages[self.page].items.len(), self.out.lines.len(), 0.0));
+    }
+
+    /// A page break (改ページ): the next page, whatever column this is.
+    fn break_page(&mut self) {
+        self.col = self.cols;
+        self.new_page();
+    }
+
+    /// Move each column's items and lines to their column.
+    fn place_columns(&mut self) {
+        if self.cols <= 1 {
+            return;
+        }
+        let segs = std::mem::take(&mut self.segs);
+        for (k, &(page, from, lfrom, dx)) in segs.iter().enumerate() {
+            let next = segs.get(k + 1);
+            let lto = next.map_or(self.out.lines.len(), |n| n.2);
+            if dx != 0.0 {
+                let items = &mut self.out.pages[page].items;
+                let to = next.filter(|n| n.0 == page).map_or(items.len(), |n| n.1);
+                for it in &mut items[from..to] {
+                    *it = it.moved(dx, 0.0);
+                }
+                for l in &mut self.out.lines[lfrom..lto] {
+                    l.xs.iter_mut().for_each(|x| *x += dx);
+                    l.left += dx;
+                    l.right += dx;
+                }
+            }
+        }
+    }
+
+    fn real_new_page(&mut self) {
         // stop at the page limit: keep drawing onto the last page and let the
         // callers see `truncated` and stop
         if self.out.pages.len() >= self.max_pages {
@@ -475,7 +578,10 @@ fn layout_para(
         let has_ruby = line
             .iter()
             .any(|g| g.run != usize::MAX && p.runs[g.run].ruby.is_some());
-        let need = max_size * 1.25 + if has_ruby { max_size * 0.5 } else { 0.0 };
+        // A line takes one pitch while its tallest character fits in it
+        // (Ichitaro: 65 lines of 11 pt on A4 with 15 mm margins, a pitch of
+        // 11.6 pt, stay one pitch each), else as many as it needs.
+        let need = max_size * 0.995 + if has_ruby { max_size * 0.5 } else { 0.0 };
         // whole line pitches that hold the tallest character (computed, not
         // counted up one pitch at a time: a tiny pitch made that loop run
         // millions of times per line)
@@ -490,18 +596,7 @@ fn layout_para(
         let top = ctx.y;
         // pictures anchored in this paragraph: from the text area's left and this line's top
         if li == 0 && !p.frames.is_empty() {
-            let (tl, mm) = (setup.left(), MM / 100.0);
-            for id in &p.frames {
-                if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
-                    ctx.items().push(Item::Image {
-                        id: *id,
-                        x: tl + fx as f32 * mm,
-                        y: top + fy as f32 * mm,
-                        w: fw as f32 * mm,
-                        h: fh as f32 * mm,
-                    });
-                }
-            }
+            push_frames(ctx, &p.frames, top);
         }
         let baseline = top + h - (pitch - base) / 2.0 - base * 0.12;
         let lw: f32 = line.iter().map(|g| g.w).sum();
@@ -575,7 +670,8 @@ fn layout_para(
                 xsv.push(gx[q]);
             }
             if !s.trim().is_empty() {
-                let gothic = st.font.is_some_and(|f| ctx.setup.gothic.contains(&f));
+                let face = ctx.setup.face_of(st.font);
+                let gothic = matches!(face, 1 | 2 | 5);
                 ctx.items().push(Item::Text {
                     xs: xsv,
                     y: baseline,
@@ -584,6 +680,7 @@ fn layout_para(
                     b: st.bold == Some(true),
                     i: st.italic == Some(true),
                     g: gothic,
+                    f: face,
                     color: st.color.clone(),
                     pre: line[k].pre,
                 });
@@ -630,6 +727,7 @@ fn layout_para(
                         let xsr: Vec<f32> = (0..rt.chars().count())
                             .map(|q| start_x + step * q as f32 + (step - rs) / 2.0)
                             .collect();
+                        let rf = ctx.setup.face_of(line[k].style.font);
                         ctx.items().push(Item::Text {
                             xs: xsr,
                             y: baseline - size * 1.0,
@@ -637,7 +735,8 @@ fn layout_para(
                             size: rs,
                             b: false,
                             i: false,
-                            g: false,
+                            g: matches!(rf, 1 | 2 | 5),
+                            f: rf,
                             color: line[k].style.color.clone(),
                             pre: false,
                         });
@@ -724,6 +823,11 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
                 page: 0,
                 y: 0.0,
                 max_pages: usize::MAX,
+                cols: 1,
+                col: 0,
+                col_step: 0.0,
+                dx: 0.0,
+                segs: Vec::new(),
             };
             scratch.out.pages.push(Page {
                 w: 0.0,
@@ -756,6 +860,8 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
             ctx.new_page();
         }
         let top = ctx.y;
+        // pictures anchored on this line: from the text area's left and the line's top
+        push_frames(ctx, &row.frames, top);
         // Draw for real
         *flat_start -= row.cells.iter().map(|c| c.paragraphs.len()).sum::<usize>();
         for (ci, c) in row.cells.iter().enumerate() {
@@ -835,7 +941,19 @@ pub fn layout_with(
     pre: Option<&Preedit>,
     max_pages: usize,
 ) -> Layout {
-    let setup = &setup.sane();
+    let full = setup.sane();
+    // 段組: lay out in the first column, each column as wide as Ichitaro
+    // makes it (the text width less the gaps, shared out), then move the
+    // later columns over
+    let cols = if full.vertical { 1 } else { full.columns.clamp(1, 10) };
+    let gap = full.col_gap_mm.clamp(0.0, 100.0) * MM;
+    let col_w = (full.text_w() - gap * (cols - 1) as f32) / cols as f32;
+    let (cols, col_w) = if col_w > full.font_pt * 2.0 { (cols, col_w) } else { (1, full.text_w()) };
+    let mut one = full.clone();
+    if cols > 1 {
+        one.margin_right_mm = (full.page_w() - full.left() - col_w) / MM;
+    }
+    let setup = &one;
     let mut ctx = Ctx {
         setup,
         show_marks,
@@ -843,6 +961,11 @@ pub fn layout_with(
         page: 0,
         y: 0.0,
         max_pages: max_pages.max(1),
+        cols,
+        col: 0,
+        col_step: col_w + gap,
+        dx: 0.0,
+        segs: Vec::new(),
     };
     ctx.new_page();
     let mut flat = 0usize;
@@ -869,7 +992,7 @@ pub fn layout_with(
                             size: r - l,
                         });
                     }
-                    ctx.new_page();
+                    ctx.break_page();
                 }
                 layout_para(
                     &mut ctx,
@@ -886,6 +1009,7 @@ pub fn layout_with(
             Block::Table(t) => layout_table(&mut ctx, t, &mut flat, pre),
         }
     }
+    ctx.place_columns();
     ctx.out
 }
 
@@ -895,4 +1019,185 @@ pub fn is_gothic(name: &str) -> bool {
     ["ゴシック", "ｺﾞｼｯｸ", "gothic", "丸ゴ", "メイリオ", "meiryo", "游ゴ", "ui gothic", "arial", "helvetica", "sans", "ヒラギノ角", "角ゴ"]
         .iter()
         .any(|k| n.contains(k))
+}
+
+fn is_zero(v: &u8) -> bool {
+    *v == 0
+}
+
+impl PageSetup {
+    /// The face class of text set in `/Font` index `font` (`None` or an
+    /// index past the table: the document's standard face).
+    pub fn face_of(&self, font: Option<u16>) -> u8 {
+        font.and_then(|f| self.faces.get(f as usize).copied()).unwrap_or(self.base_face)
+    }
+
+    /// Fill the font fields from the document's font table.
+    pub fn fill_fonts(&mut self, fonts: &[crate::doc::FontInfo]) {
+        self.faces = fonts.iter().map(|f| face_class(&f.name)).collect();
+        self.font_names = fonts.iter().map(|f| f.name.clone()).collect();
+        self.base_font = base_font(fonts);
+        self.base_face = self.base_font.map_or(0, |i| self.faces[i as usize]);
+        self.gothic = (0..fonts.len() as u16).filter(|&i| matches!(self.faces[i as usize], 1 | 2 | 5)).collect();
+    }
+}
+
+/// Symbol faces Ichitaro adds for its own marks (JustUnitMark and others).
+pub fn is_mark_font(name: &str) -> bool {
+    name.starts_with("Just") && name.contains("Mark")
+}
+
+/// The face of text without a font of its own: the first Japanese
+/// (Shift_JIS) face of the table that is not a mark face. Checked with
+/// 一太郎ビューア by swapping the face: a table that starts with
+/// JustUnitMark and Times New Roman sets its plain text in the third face.
+pub fn base_font(fonts: &[crate::doc::FontInfo]) -> Option<u16> {
+    fonts
+        .iter()
+        .position(|f| f.charset == 0x80 && !is_mark_font(&f.name))
+        .or_else(|| fonts.iter().position(|f| !is_mark_font(&f.name)))
+        .map(|i| i as u16)
+}
+
+/// Face class of a face name: 0 Mincho (and serif), 1 Gothic (and sans),
+/// 2 rounded Gothic (丸ゴシック), 3 textbook (教科書体), 4 brush and
+/// handwriting (楷書, 行書, 毛筆, 勘亭流), 5 pop (POP体).
+pub fn face_class(name: &str) -> u8 {
+    let n = name.to_lowercase();
+    let has = |k: &[&str]| k.iter().any(|k| n.contains(k));
+    if has(&["pop", "ﾎﾟｯﾌﾟ", "ポップ"]) {
+        5
+    } else if has(&["丸ｺﾞ", "丸ゴ", "丸ｺ\u{ff9e}", "まるご", "maru", "rounded"]) {
+        2
+    } else if has(&["教科書", "kyokasho"]) {
+        3
+    } else if has(&["楷書", "行書", "毛筆", "勘亭", "隷書", "草書", "正楷", "手書", "ペン字", "古印", "宋朝"]) {
+        4
+    } else if is_gothic(name) {
+        1
+    } else {
+        0
+    }
+}
+
+/// Laid-out text boxes shared between copies of a setup (see
+/// [`PageSetup::boxes`]).
+#[derive(Debug, Clone, Default)]
+pub struct Boxes(pub std::sync::Arc<Vec<(u16, i32, i32, Vec<Item>)>>);
+
+impl PartialEq for Boxes {
+    fn eq(&self, o: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &o.0)
+    }
+}
+
+/// Pictures and text boxes anchored on a line whose top is `top`: from the
+/// text area's left and the line's top. Pictures go under the text (the
+/// editor draws images first), box text with the rest.
+fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
+    let setup = ctx.setup;
+    let (tl, mm) = (setup.left(), MM / 100.0);
+    for id in ids {
+        let fixed = setup.fixed.contains(id);
+        let top = if fixed { setup.top() } else { top };
+        // a frame on the page stays where it is whatever column anchors it
+        let tl = if fixed { tl - ctx.dx } else { tl };
+        if let Some(&(_, fx, fy, fw, fh)) = setup.frames.iter().find(|f| f.0 == *id) {
+            ctx.items().push(Item::Image {
+                id: *id,
+                x: tl + fx as f32 * mm,
+                y: top + fy as f32 * mm,
+                w: fw as f32 * mm,
+                h: fh as f32 * mm,
+            });
+        }
+        if let Some((_, fx, fy, items)) = setup.boxes.0.iter().find(|b| b.0 == *id) {
+            let (dx, dy) = (tl + *fx as f32 * mm, top + *fy as f32 * mm);
+            for it in items {
+                ctx.items().push(it.moved(dx, dy));
+            }
+        }
+    }
+}
+
+impl Item {
+    /// The item moved by `(dx, dy)`.
+    pub fn moved(&self, dx: f32, dy: f32) -> Item {
+        let mut it = self.clone();
+        match &mut it {
+            Item::Text { xs, y, .. } => {
+                xs.iter_mut().for_each(|x| *x += dx);
+                *y += dy;
+            }
+            Item::Image { x, y, .. } | Item::Mark { x, y, .. } => {
+                *x += dx;
+                *y += dy;
+            }
+            Item::Line { x1, y1, x2, y2, .. } => {
+                *x1 += dx;
+                *x2 += dx;
+                *y1 += dy;
+                *y2 += dy;
+            }
+        }
+        it
+    }
+}
+
+/// Lay out the text of each text box (frame of kind 2) inside the box, once:
+/// the box's own margins, the document's character size and faces, one
+/// character per cell and a line pitch of 1.5 characters (the box keeps as
+/// many whole lines as fit, at least one). Text past the box is cut off.
+pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32, i32, Vec<Item>)> {
+    let mut out = Vec::new();
+    // the k-th text-box frame of /Frame shows the k-th box of /LayoutBoxText
+    // (checked on a school handout: sizes and texts agree box by box)
+    for (k, f) in doc.frames.iter().filter(|f| f.kind == 2).enumerate() {
+        let Some(b) = doc.boxes.get(k) else { continue };
+        if b.blocks.is_empty() || f.w == 0 || f.h == 0 {
+            continue;
+        }
+        let font = setup.font_pt.clamp(4.0, 100.0);
+        let [pl, pr, pt, pb] = b.pad.map(|v| v as f32 / 100.0);
+        let (bw, bh) = (f.w as f32 / 100.0, f.h as f32 / 100.0);
+        let inner_w = (bw - pl - pr).max(1.0) * MM;
+        let inner_h = (bh - pt - pb).max(1.0) * MM;
+        let lines = ((inner_h / (font * 1.5)).floor() as u32).max(1);
+        let pitch = inner_h / lines as f32;
+        let n = lines.max(2);
+        let width = bw.max(60.0);
+        let height = (pt + pitch * n as f32 / MM + 1.0).max(60.0);
+        let sub = PageSetup {
+            width_mm: width,
+            height_mm: height,
+            margin_left_mm: pl,
+            margin_right_mm: width - bw + pr,
+            margin_top_mm: pt,
+            margin_bottom_mm: height - pt - pitch * n as f32 / MM,
+            chars_per_line: ((inner_w / font).floor() as u32).max(1),
+            lines_per_page: n,
+            font_pt: font,
+            gothic: setup.gothic.clone(),
+            faces: setup.faces.clone(),
+            base_face: setup.base_face,
+            font_names: setup.font_names.clone(),
+            base_font: setup.base_font,
+            ..PageSetup::default()
+        };
+        let l = layout_with(&b.blocks, &sub, false, None, 1);
+        let Some(page) = l.pages.first() else { continue };
+        let max_y = (pt + bh) * MM;
+        let items: Vec<Item> = page
+            .items
+            .iter()
+            .filter(|it| match it {
+                Item::Text { y, .. } => *y <= max_y,
+                Item::Mark { .. } => false,
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        out.push((f.id, f.x, f.y, items));
+    }
+    out
 }

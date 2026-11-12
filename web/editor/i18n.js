@@ -135,6 +135,8 @@ const EN = {
   "検索": "Find",
   "フォント（いまは明朝のみ）": "Font (Mincho only for now)",
   "ゴシック": "Gothic",
+  "この文書のフォント": "Fonts in this document",
+  "ほかのフォント": "More fonts",
   "フォント": "Font",
   "明朝": "Mincho",
   "文字サイズ": "Text size",
