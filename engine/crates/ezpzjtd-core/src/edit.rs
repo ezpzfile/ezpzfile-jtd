@@ -363,6 +363,7 @@ impl Editor {
         setup.fill_fonts(&doc.fonts);
         setup.frames = picture_frames(&doc);
         setup.fixed = doc.frames.iter().filter(|f| f.fixed).map(|f| f.id).collect();
+        setup.on_text = doc.frames.iter().filter(|f| f.on_text && !f.fixed).map(|f| f.id).collect();
         setup.wrap = doc.frames.iter().filter(|f| f.wrap && f.kind != 4).map(|f| f.id).collect();
         setup.boxes = crate::layout::Boxes(std::sync::Arc::new(crate::layout::box_items(&doc, &setup)));
         Editor {

@@ -614,6 +614,17 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.7** `0020` record word 2 is the 段 count less one (1 on two-段
+  a320 and a162, 2 on three-段 玉東中便り, whose `1002` has no 段組).
+  A paragraph holding only a `0020` record takes no height wherever it is
+  (玉東中便り starts with four). 縦組み 段 from `0020` only: a line holds
+  one character less than fits at 字数's pitch (text width / 字数), 20 of
+  21.5. Frame word [5] = 1: measured from the text area; otherwise a
+  frame in 縦組み text is measured from its anchoring character, x down
+  the line and y from the line's right edge, keeping its size on the
+  paper. One-cell ruled lines unwrapped into paragraphs keep their rules
+  (the title box of 玉東中便り). **observed**
+
 - **0.5.6** `/LayoutBox` `6006`: u8 flags, then (bit0) u8 writing
   direction, 1 = 縦書き (a 縦組み 学校だより's body, title and school name
   boxes; boxes without it write across), then (bits 2-5) u16 left, right,

@@ -193,6 +193,18 @@ pub struct Paragraph {
     /// Frames (pictures) anchored in this paragraph, by frame id (see `frames.rs`).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub frames: Vec<u16>,
+    /// Where each frame is anchored: (frame id, characters before it).
+    #[serde(skip)]
+    pub frame_at: Vec<(u16, usize)>,
+    /// The ruled lines of the one-cell ruled line this paragraph was
+    /// unwrapped from (a 罫線 box round a title), with the ruled area's width
+    /// in grid units.
+    #[serde(skip)]
+    pub ruled: Option<Box<(RowLines, u16)>>,
+    /// On a `0020` paragraph: its 段 count less one (1 on a320 and a162 in
+    /// two 段, 2 on 玉東中便り in three).
+    #[serde(skip)]
+    pub cols_mark: u8,
     #[serde(skip)]
     pub src: Src<ParaSrc>,
     /// The empty paragraph that ends a 段組 record (`0020`) at the start of
@@ -696,6 +708,21 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
         .and_then(|b| crate::page::parse(&b))
         .map(|p| p.setup());
 
+    // 段組 given only by the `0020` record at the text's start (玉東中便り:
+    // three 段, which `1002` does not hold)
+    let page = page.map(|mut p| {
+        let mark = sheets.first().and_then(|s| {
+            s.blocks.iter().take(8).find_map(|b| match b {
+                Block::Paragraph(q) if q.cols_mark > 0 => Some(q.cols_mark as u32 + 1),
+                _ => None,
+            })
+        });
+        if let Some(n) = mark.filter(|&n| n > p.columns && p.columns == 1) {
+            p.columns = n.min(4);
+            p.short_cols = p.vertical;
+        }
+        p
+    });
     let frames = crate::frames::read_frames(&cfb, "");
     let pictures = crate::frames::read_pictures(&cfb, &frames, limits.max_bytes);
     let boxes = if frames.iter().any(|f| f.kind == 2) { crate::frames::read_boxes(&cfb, &mut budget.style_left) } else { Vec::new() };
@@ -829,6 +856,8 @@ struct Track {
 struct Builder<'a> {
     /// a `0020` record opened the text: the paragraph it ends takes no height
     marker_para: bool,
+    /// Word 2 of the last `0020` record (段組: 段 count less one).
+    marker_cols: u16,
     map: &'a StyleMap,
     blocks: Vec<Block>,
     para: Paragraph,
@@ -909,6 +938,7 @@ impl<'a> Builder<'a> {
         let mut p = std::mem::take(&mut self.para);
         if std::mem::take(&mut self.marker_para) && p.runs.is_empty() && p.frames.is_empty() {
             p.no_line = true;
+            p.cols_mark = std::mem::take(&mut self.marker_cols).min(9) as u8;
         }
         p.align = self.para_align.take().unwrap_or(self.align);
         (p.indent, p.feed) = self.para_fmt.take().unwrap_or((self.indent, self.feed));
@@ -1001,7 +1031,11 @@ fn push_table(blocks: &mut Vec<Block>, t: Table) {
         return;
     }
     if t.rows.iter().all(|r| r.cells.len() <= 1) {
+        let width = t.width;
         for r in t.rows {
+            let lines = r.lines();
+            let ruled = (!lines.verticals.is_empty() || !lines.below.is_empty() || !lines.middle.is_empty())
+                .then(|| Box::new((lines, width)));
             let row_src = r.src.get().cloned();
             let feed = r.feed;
             let mut frames = r.frames;
@@ -1038,6 +1072,23 @@ fn push_table(blocks: &mut Vec<Block>, t: Table) {
                     p.frames = frames;
                 }
             }
+            // the row's lines go with its paragraphs: rules beside each, the
+            // lines under or through the row with its last
+            if let Some(ruled) = ruled {
+                let n = blocks.len();
+                for (i, b) in blocks[at..].iter_mut().enumerate() {
+                    if let Block::Paragraph(p) = b {
+                        let mut l = ruled.clone();
+                        if at + i + 1 < n {
+                            l.0.below.clear();
+                            l.0.below_kinds.clear();
+                            l.0.middle.clear();
+                            l.0.middle_kinds.clear();
+                        }
+                        p.ruled = Some(l);
+                    }
+                }
+            }
         }
         return;
     }
@@ -1062,6 +1113,7 @@ fn build_blocks(
     let tokens = text::tokenize(units);
     let mut b = Builder {
         marker_para: false,
+        marker_cols: 0,
         map,
         blocks: Vec::new(),
         para: Paragraph::default(),
@@ -1224,15 +1276,18 @@ fn build_blocks(
                     },
                 });
             }
-            Token::Record { class: 0x0020, start, .. } => {
+            Token::Record { class: 0x0020, payload, .. } => {
                 b.close_row();
                 b.close_table();
-                b.marker_para = *start == 0;
+                b.marker_para = b.para.runs.is_empty() && b.para.frames.is_empty();
+                b.marker_cols = payload.get(2).copied().unwrap_or(0);
             }
             Token::Record { class: 0x0000, payload, .. } => {
                 if let Some(id) = crate::frames::anchor_id(payload) {
                     if b.para.frames.len() < 256 {
                         b.para.frames.push(id);
+                        let at = b.para.runs.iter().map(|r| r.text.chars().count()).sum();
+                        b.para.frame_at.push((id, at));
                     }
                 }
             }

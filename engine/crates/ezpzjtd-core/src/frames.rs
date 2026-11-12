@@ -37,6 +37,10 @@ pub struct Frame {
     /// top left, rather than from the anchor's line (word [6] = 1).
     #[serde(default)]
     pub fixed: bool,
+    /// Word [5] = 1: measured from the text area rather than from the
+    /// anchoring character (a 縦組み 学校だより's title scroll).
+    #[serde(default)]
+    pub on_text: bool,
     /// Word [25] has 0x100 or 0x200 and not 4: the text goes round the
     /// frame (回り込み): photos 0x300. With 4 (a picture behind a card's
     /// text, 0x304 or 4) the text runs under it. Text boxes (0xb80) do not
@@ -90,6 +94,7 @@ pub fn read_frames(cfb: &Cfb, base: &str) -> Vec<Frame> {
                 w: be32(r, 34).unwrap_or(0),
                 h: be32(r, 38).unwrap_or(0),
                 fixed: w(6) == 2,
+                on_text: w(5) == 1,
                 wrap: w(25) & 0x300 != 0 && w(25) & 4 == 0,
             });
         }

@@ -55,6 +55,9 @@ pub struct PageSetup {
     /// Frames placed on the page rather than from their anchor's line.
     #[serde(skip)]
     pub fixed: Vec<u16>,
+    /// Frames measured from the text area's top left (word [5] = 1).
+    #[serde(skip)]
+    pub on_text: Vec<u16>,
     /// Frames the text goes round (回り込み), by id.
     #[serde(skip)]
     pub wrap: Vec<u16>,
@@ -78,6 +81,11 @@ pub struct PageSetup {
     /// `PageStyle::rows`)
     #[serde(default = "one_col")]
     pub rows: u32,
+    /// 縦組み 段 given only by the text's `0020` record (玉東中便り): a
+    /// 段's line holds one character less than fits at 字数's pitch (20 of
+    /// 21.5 there).
+    #[serde(default)]
+    pub short_cols: bool,
 }
 
 fn one_col() -> u32 {
@@ -108,12 +116,14 @@ impl Default for PageSetup {
             frames: Vec::new(),
             boxes: Default::default(),
             fixed: Vec::new(),
+            on_text: Vec::new(),
             wrap: Vec::new(),
             free_lines: false,
             vertical: false,
             columns: 1,
             col_gap_mm: 0.0,
             rows: 1,
+            short_cols: false,
         }
     }
 }
@@ -189,12 +199,14 @@ impl PageSetup {
             frames: self.frames.clone(),
             boxes: self.boxes.clone(),
             fixed: self.fixed.clone(),
+            on_text: self.on_text.clone(),
             wrap: self.wrap.clone(),
             free_lines: self.free_lines,
             vertical: self.vertical,
             columns: self.columns.clamp(1, 10),
             col_gap_mm: if self.col_gap_mm.is_finite() { self.col_gap_mm.clamp(0.0, 100.0) } else { 0.0 },
             rows: self.rows.clamp(1, 2),
+            short_cols: self.short_cols,
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -872,8 +884,12 @@ fn layout_para(
         }
         let top = ctx.y;
         // pictures anchored in this paragraph: from the text area's left and this line's top
+        // 縦組み: a frame anchored on a character goes with that
+        // character's line, measured from its place down the line
+        let on_char = |f: &u16| setup.vertical && !setup.fixed.contains(f) && !setup.on_text.contains(f);
         if li == 0 && !p.frames.is_empty() && !frames_done {
             let rest: Vec<u16> = if wrapping { p.frames.iter().copied().filter(|f| !setup.fixed.contains(f)).collect() } else { p.frames.clone() };
+            let rest: Vec<u16> = rest.into_iter().filter(|f| !on_char(f)).collect();
             push_frames(ctx, &rest, top);
         }
         let baseline = top + h - (pitch - base) / 2.0 - base * 0.12;
@@ -905,6 +921,16 @@ fn layout_para(
         let end = model_pos;
         xs.push(after);
         let is_last = li + 1 == nlines;
+        if setup.vertical && !p.frames.is_empty() {
+            for &f in p.frames.iter().filter(|f| on_char(f)) {
+                let at = p.frame_at.iter().find(|a| a.0 == f).map_or(0, |a| a.1);
+                if (at >= start && at < end) || (li == 0 && at < start) || (is_last && at >= end) {
+                    let k = line.iter().position(|g| g.off == Some(at));
+                    let ax = k.map_or(x0, |k| gx[k]);
+                    push_frames_at(ctx, &[f], top, Some(ax));
+                }
+            }
+        }
         ctx.out.lines.push(LineBox {
             page: ctx.page,
             top,
@@ -1062,6 +1088,45 @@ pub fn snapped_row(cells: &[(u16, u16)]) -> Vec<(u16, u16)> {
             (l, r.max(l + 1))
         })
         .collect()
+}
+
+/// The ruled lines of a line unwrapped from a one-cell ruled area (see
+/// `Paragraph::ruled`), from `top` to `bottom`: as [`layout_table`] draws a
+/// row's.
+fn draw_ruled(ctx: &mut Ctx, g: &crate::doc::RowLines, width: u16, top: f32, bottom: f32) {
+    if bottom <= top {
+        return;
+    }
+    let setup = ctx.setup;
+    let left = setup.left();
+    let mut unit = setup.unit();
+    if width as f32 * unit > setup.text_w() + setup.cell() * 2.0 {
+        unit = (setup.text_w() + setup.cell() * 2.0) / width.max(1) as f32;
+    }
+    let xu = |u: u16| left + u as f32 * unit;
+    let mid = (top + bottom) / 2.0;
+    let line = |x1: f32, y1: f32, x2: f32, y2: f32, k: u8| Item::Line {
+        x1,
+        y1,
+        x2,
+        y2,
+        w: line_width(k),
+        color: Some(if k == 16 { "#888" } else { "#222" }.to_string()),
+        k,
+    };
+    for (i, &(x, up, down)) in g.verticals.iter().enumerate() {
+        let (ku, kd) = g.vertical_kinds.get(i).copied().unwrap_or_default();
+        let (y1, y2) = (if up { top } else { mid }, if down { bottom } else { mid });
+        ctx.items().push(line(xu(x), y1, xu(x), y2, if up { ku } else { kd }));
+    }
+    for (i, &(x1, x2)) in g.below.iter().enumerate() {
+        let k = g.below_kinds.get(i).copied().unwrap_or(0);
+        ctx.items().push(line(xu(x1), bottom, xu(x2), bottom, k));
+    }
+    for (i, &(x1, x2)) in g.middle.iter().enumerate() {
+        let k = g.middle_kinds.get(i).copied().unwrap_or(0);
+        ctx.items().push(line(xu(x1), mid, xu(x2), mid, k));
+    }
 }
 
 fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&Preedit>) {
@@ -1248,7 +1313,14 @@ pub fn layout_with(
         // (41 there).
         let cell = full.font_pt * COL_CELL;
         let fit = (col_w / cell).round().max(4.0) as u32;
-        let line_w = if one.chars_per_line <= fit {
+        // 縦組み 段 from the `0020` record: characters at 字数's pitch across
+        // the whole width, one less than fits (玉東中便り: 20 of 21.5 in each
+        // of 3 段)
+        let pitch = full.text_w() / full.chars_per_line.max(1) as f32;
+        let line_w = if full.short_cols && pitch > full.font_pt * 0.8 {
+            one.chars_per_line = ((col_w / pitch).floor() as u32).saturating_sub(1).max(4);
+            one.chars_per_line as f32 * pitch
+        } else if one.chars_per_line <= fit {
             (one.chars_per_line as f32 * cell).min(col_w)
         } else {
             one.chars_per_line = fit;
@@ -1332,6 +1404,7 @@ fn layout_pass(
                     }
                     ctx.break_page();
                 }
+                let (page0, y0) = (ctx.page, ctx.y);
                 layout_para(
                     &mut ctx,
                     p,
@@ -1342,6 +1415,11 @@ fn layout_pass(
                     false,
                     None,
                 );
+                if let Some(r) = &p.ruled {
+                    let top = if ctx.page == page0 { y0 } else { ctx.top() };
+                    let bottom = ctx.y;
+                    draw_ruled(&mut ctx, &r.0, r.1, top, bottom);
+                }
                 flat += 1;
             }
             Block::Table(t) => layout_table(&mut ctx, t, &mut flat, pre),
@@ -1437,8 +1515,15 @@ impl PartialEq for Boxes {
 /// text area's left and the line's top. Pictures go under the text (the
 /// editor draws images first), box text with the rest.
 fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
+    push_frames_at(ctx, ids, top, None)
+}
+
+/// [`push_frames`], measuring frames anchored on a character from `at_x`
+/// (縦組み: the anchoring character's place down the line) rather than
+/// from the text area's left.
+fn push_frames_at(ctx: &mut Ctx, ids: &[u16], top: f32, at_x: Option<f32>) {
     let setup = ctx.setup;
-    let (tl, mm) = (setup.left(), MM / 100.0);
+    let (tl, mm) = (at_x.unwrap_or(setup.left()), MM / 100.0);
     for id in ids {
         // a frame on the page is measured from the paper's top left (checked
         // with 一太郎ビューア on a handout with A4 margins of 20 and 17 mm), and
@@ -1453,16 +1538,22 @@ fn push_frames(ctx: &mut Ctx, ids: &[u16], top: f32) {
         let tl = if fixed { -ctx.dx } else { tl };
         // 縦組み: a frame on the page is given on the paper as it is; the
         // layout page is the paper turned a quarter turn
-        // (one floating in the text is measured from the text area's top
-        // left on the paper: the 学校だより scroll of a 縦組み handout). The
-        // column's shift along the layout page is taken back, as the
-        // column's items are moved by it afterwards
-        let vert = setup.vertical;
+        // (one measured from the text area, word [5] = 1, from the text
+        // area's top left on the paper: the 学校だより scroll of a 縦組み
+        // handout). The column's shift along the layout page is taken back,
+        // as the column's items are moved by it afterwards. One anchored on
+        // a character is measured as across, its x down the line and its y
+        // from the line's right edge, and keeps its size on the paper (a
+        // photo and the boxes of 玉東中便り)
+        let on_line = setup.vertical && !fixed && !setup.on_text.contains(id);
+        let vert = setup.vertical && !on_line;
         let (px0, py0) = if fixed { (0.0, 0.0) } else { (setup.margin_bottom_mm * MM, setup.margin_left_mm * MM) };
         let dx = ctx.dx;
         let turn = |x: f32, y: f32, w: f32, h: f32| {
             if vert {
                 (y - dx, setup.page_h() - (x + w), h, w)
+            } else if on_line {
+                (x, y, h, w)
             } else {
                 (x, y, w, h)
             }
