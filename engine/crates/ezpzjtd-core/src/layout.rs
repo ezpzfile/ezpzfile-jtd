@@ -93,6 +93,9 @@ pub struct PageSetup {
     /// (frame [`crate::frames::BACKGROUND`]) covers the paper.
     #[serde(skip)]
     pub background: (Option<String>, bool),
+    /// Headers and footers shown (see `PageStyle::headers`), with their text.
+    #[serde(skip)]
+    pub headers: Headers,
 }
 
 fn one_col() -> u32 {
@@ -133,6 +136,7 @@ impl Default for PageSetup {
             rows: 1,
             short_cols: false,
             background: (None, false),
+            headers: Default::default(),
         }
     }
 }
@@ -218,6 +222,7 @@ impl PageSetup {
             rows: self.rows.clamp(1, 2),
             short_cols: self.short_cols,
             background: self.background.clone(),
+            headers: self.headers.clone(),
         }
     }
     pub fn page_w(&self) -> f32 {
@@ -1386,13 +1391,101 @@ pub fn layout_with(
     // (縦組み turns frames on the page: not set up ahead there yet)
     // (a long document with such frames lays out once: typing stays quick)
     if landed.is_empty() || full.vertical || blocks.len() > 4000 {
+        let mut out = out;
+        add_headers(&mut out, &full);
         return out;
     }
     let mut pre_frames: std::collections::HashMap<(usize, u32), Vec<u16>> = Default::default();
     for (id, at) in landed {
         pre_frames.entry(at).or_default().push(id);
     }
-    layout_pass(blocks, setup, &full, show_marks, pre, max_pages, cols, col_w, gap, pre_frames).0
+    let mut out = layout_pass(blocks, setup, &full, show_marks, pre, max_pages, cols, col_w, gap, pre_frames).0;
+    add_headers(&mut out, &full);
+    out
+}
+
+/// Headers and footers (柱) on every page, on the paper as it is: a line at
+/// the place's distance from the top or bottom edge, across the text area,
+/// `?` standing for the page number. On a 縦組み page the alignment is
+/// mirrored (a newspaper template's name, right-aligned, shows at the
+/// paper's top left in 一太郎ビューア).
+fn add_headers(out: &mut Layout, full: &PageSetup) {
+    if full.headers.0.is_empty() || out.pages.len() > 2000 {
+        return;
+    }
+    let (pw, ph, ml, mr) = if full.vertical {
+        (full.page_h(), full.page_w(), full.margin_bottom_mm, full.margin_top_mm)
+    } else {
+        (full.page_w(), full.page_h(), full.margin_left_mm, full.margin_right_mm)
+    };
+    let has = |k: u8| full.headers.0.iter().any(|h| h.place == k);
+    for (i, page) in out.pages.iter_mut().enumerate() {
+        for h in full.headers.0.iter() {
+            // with both 2 and 3 (or 6 and 7): odd pages and even pages
+            let odd = i % 2 == 0;
+            if (h.place == 3 && has(2) && odd) || (h.place == 2 && has(3) && !odd) || (h.place == 7 && has(6) && odd) || (h.place == 6 && has(7) && !odd) {
+                continue;
+            }
+            let align = match (h.align, full.vertical) {
+                (1, _) => Align::Center,
+                (2, false) | (0, true) => Align::Right,
+                _ => Align::Left,
+            };
+            let n = (i + 1).to_string();
+            let blocks: Vec<Block> = h
+                .blocks
+                .iter()
+                .map(|b| match b {
+                    Block::Paragraph(p) => {
+                        let mut p = p.clone();
+                        p.align = align;
+                        p.indent = None;
+                        for r in &mut p.runs {
+                            if r.text.contains('?') {
+                                r.text = r.text.replace('?', &n);
+                            }
+                        }
+                        Block::Paragraph(p)
+                    }
+                    b => b.clone(),
+                })
+                .collect();
+            let sub = PageSetup {
+                width_mm: pw / MM,
+                height_mm: 60.0,
+                margin_left_mm: ml,
+                margin_right_mm: mr,
+                margin_top_mm: 0.0,
+                margin_bottom_mm: 0.0,
+                chars_per_line: (((pw / MM - ml - mr) * MM / full.font_pt).floor() as u32).max(4),
+                lines_per_page: 6,
+                font_pt: full.font_pt,
+                faces: full.faces.clone(),
+                gothic: full.gothic.clone(),
+                base_face: full.base_face,
+                font_names: full.font_names.clone(),
+                base_font: full.base_font,
+                free_lines: true,
+                ..PageSetup::default()
+            };
+            let l = layout_with(&blocks, &sub, false, None, 1);
+            let Some(p0) = l.pages.first() else { continue };
+            let texts: Vec<&Item> = p0.items.iter().filter(|it| matches!(it, Item::Text { .. })).collect();
+            if texts.is_empty() {
+                continue;
+            }
+            let top = texts.iter().map(|it| if let Item::Text { y, size, .. } = it { y - size * 0.88 } else { 0.0 }).fold(f32::MAX, f32::min);
+            let bottom = texts.iter().map(|it| if let Item::Text { y, size, .. } = it { y + size * 0.12 } else { 0.0 }).fold(f32::MIN, f32::max);
+            let d = h.dist_mm * MM;
+            let dy = if matches!(h.place, 2 | 3) { d - top } else { ph - d - bottom };
+            let items: Vec<Item> = texts.into_iter().map(|it| it.moved(0.0, dy)).collect();
+            if full.vertical {
+                page.flat.extend(items);
+            } else {
+                page.items.extend(items);
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1552,6 +1645,27 @@ pub fn face_class(name: &str) -> u8 {
         1
     } else {
         0
+    }
+}
+
+/// A header or footer (柱) shown on every page: its place (2 and 3 at the
+/// top, others at the bottom), alignment (0 left, 1 centre, 2 right), its
+/// distance from the paper's edge and its text (`?` is the page number).
+#[derive(Debug, Clone, Default)]
+pub struct Header {
+    pub place: u8,
+    pub align: u8,
+    pub dist_mm: f32,
+    pub blocks: Vec<Block>,
+}
+
+/// Headers and footers shared between copies of a setup.
+#[derive(Debug, Clone, Default)]
+pub struct Headers(pub std::sync::Arc<Vec<Header>>);
+
+impl PartialEq for Headers {
+    fn eq(&self, o: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &o.0)
     }
 }
 

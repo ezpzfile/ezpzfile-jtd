@@ -742,8 +742,24 @@ pub fn open_with(bytes: Vec<u8>, limits: &Limits) -> Result<Document> {
     if let Some((mime, data)) = bg_pic.filter(|p| p.1.len() <= limits.max_bytes) {
         pictures.push(crate::frames::Picture { item: crate::frames::BACKGROUND, mime, data, layout: None });
     }
+    // headers and footers: `/Header` substream k − 1 shows at place k
+    let header_texts: Vec<(u32, Vec<Block>)> = cfb
+        .read("/Header")
+        .and_then(|b| crate::ssmg::substreams_indexed(&b).ok())
+        .map(|subs| subs.iter().take(16).map(|(id, s)| (*id, blocks_from_textv(s, &mut budget.style_left).unwrap_or_default())).collect())
+        .unwrap_or_default();
     let page = page.map(|mut p| {
         p.background = (bg_colour.clone(), has_pic);
+        let hs: Vec<crate::layout::Header> = p
+            .headers
+            .0
+            .iter()
+            .filter_map(|h| {
+                let blocks = header_texts.iter().find(|(id, _)| *id + 1 == h.place as u32)?.1.clone();
+                (!blocks.is_empty()).then(|| crate::layout::Header { blocks, ..h.clone() })
+            })
+            .collect();
+        p.headers = crate::layout::Headers(std::sync::Arc::new(hs));
         p
     });
     Ok(Document {

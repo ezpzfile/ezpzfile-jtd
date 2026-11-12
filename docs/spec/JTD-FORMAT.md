@@ -614,6 +614,17 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.11** Headers and footers (柱), found by changing single bytes
+  and opening the file in 一太郎ビューア: `/DocumentViewStyles` records
+  `3k04`-`3k07` describe place k (1-9). `3k06`: u8 03, a group mask with
+  bit 0 (no value), then a group: bit 0 u8 1 = shown, bit 1 u8, bit 3
+  u16 distance of the line from the paper's edge (1/100 mm). `3k07` ends
+  with u8 alignment (0 left, 1 centre, 2 right), u8. Place k shows the
+  `/Header` substream numbered k − 1 (a 学校だより: 1 its name at the top,
+  5 its date at the bottom right; a sutra: 0 `- ? -`, `?` the page
+  number); places 2 and 3 are at the top, the others at the bottom. On a
+  縦組み page the alignment is mirrored. **observed**
+
 - **0.5.10** Figures go to frames of kind 4 in item order: the frames
   anchored in a text box's text take `/FigureData/layout_data n` (n the
   box's layout number), the others `main_data`, record by record (a

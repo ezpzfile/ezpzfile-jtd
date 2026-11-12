@@ -313,6 +313,7 @@ function picture(id) {
         img.onload = () => { if (S.pics && S.pics.get(p.id) === img) refresh({ all: true, scroll: false }); };
         img.src = url;
         img.dataset.url = url;
+        img.dataset.mime = p.mime;
         S.pics.set(p.id, img);
       }
     } catch {}
@@ -415,6 +416,9 @@ function paintItems(g, data, marks) {
     if (it.t === "Image") {
       const img = picture(it.id);
       if (!(img && img.complete && img.naturalWidth)) continue;
+      // a bitmap keeps its dots as 一太郎ビューア shows them (no blur when
+      // a small clip-art picture is enlarged); drawings stay smooth
+      g.imageSmoothingEnabled = img.dataset.mime === "image/svg+xml";
       if (data.upright) {
         g.save(); g.translate(it.x + it.w / 2, it.y + it.h / 2); g.rotate(-Math.PI / 2);
         g.drawImage(img, -it.h / 2, -it.w / 2, it.h, it.w); g.restore();
@@ -775,7 +779,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.10")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.11")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */

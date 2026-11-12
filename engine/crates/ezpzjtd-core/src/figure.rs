@@ -443,7 +443,7 @@ pub fn snapshot_svg(b: &[u8]) -> Option<String> {
                 if let Some((x, y, bw, bh, png)) = snapshot_bitmap(d, ty) {
                     let _ = write!(
                         out.s,
-                        "<image x=\"{x}\" y=\"{y}\" width=\"{bw}\" height=\"{bh}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{}\"/>",
+                        "<image x=\"{x}\" y=\"{y}\" width=\"{bw}\" height=\"{bh}\" preserveAspectRatio=\"none\" image-rendering=\"optimizeSpeed\" style=\"image-rendering:pixelated\" href=\"data:image/png;base64,{}\"/>",
                         base64(&png)
                     );
                 }

@@ -94,6 +94,12 @@ pub struct PageStyle {
     /// shows each half as its own page (栃木 school newsletters on A4
     /// landscape with 2 段 in the style).
     pub two_up: bool,
+    /// Header and footer places (柱) shown: (place 1-9, alignment 0 left /
+    /// 1 centre / 2 right, distance from the paper's edge in 1/100 mm).
+    /// Place k shows `/Header` substream k − 1; 2 and 3 are at the top, the
+    /// others at the bottom.
+    pub headers: Vec<(u8, u8, u32)>,
+    header_align: Vec<(u8, u8)>,
 }
 
 impl Default for PageStyle {
@@ -110,6 +116,8 @@ impl Default for PageStyle {
             col_gap: 0,
             rows: 1,
             two_up: false,
+            headers: Vec::new(),
+            header_align: Vec::new(),
         }
     }
 }
@@ -185,6 +193,49 @@ pub fn parse(b: &[u8]) -> Option<PageStyle> {
                 }
             }
             // bit1 lines per page
+            // header and footer places 31-39: `3k06` u8 03, a group with bit
+            // 0 (no value), then a group: bit 0 u8 1 = shown, bit 1 u8, bit 3
+            // u16 distance from the paper's edge (1/100 mm); `3k07` ends with
+            // u8 alignment, u8 (0 left, 1 centre, 2 right). Found by changing
+            // single bytes and opening the file in 一太郎ビューア
+            t @ 0x3106..=0x3906 if t & 0xff == 0x06 => {
+                let k = ((t >> 8) & 0x0f) as u8;
+                if p.first() == Some(&3) {
+                    let mut j = 2;
+                    let g1 = p.get(j).copied();
+                    if let (Some(m0), Some(m1)) = (p.get(1).copied(), g1) {
+                        let _ = m0;
+                        j += 1;
+                        let mut on = false;
+                        let mut dist = 0u32;
+                        if m1 & 1 != 0 {
+                            on = p.get(j) == Some(&1);
+                            j += 1;
+                        }
+                        if m1 & 2 != 0 {
+                            j += 1;
+                        }
+                        if m1 & 4 == 0 && m1 & 8 != 0 {
+                            dist = u16_at(p, j).unwrap_or(0) as u32;
+                        }
+                        if on && m1 & 4 == 0 {
+                            s.headers.retain(|h| h.0 != k);
+                            let align = s.header_align.iter().find(|a| a.0 == k).map_or(0, |a| a.1);
+                            s.headers.push((k, align, dist));
+                        }
+                    }
+                }
+            }
+            t @ 0x3107..=0x3907 if t & 0xff == 0x07 => {
+                let k = ((t >> 8) & 0x0f) as u8;
+                if p.get(1).is_some_and(|m| m & 0x20 != 0) && p.len() >= 4 {
+                    let a = p[p.len() - 2].min(2);
+                    s.header_align.push((k, a));
+                    if let Some(h) = s.headers.iter_mut().find(|h| h.0 == k) {
+                        h.1 = a;
+                    }
+                }
+            }
             0x100d => {
                 // bit1 (u16) comes first whatever follows: bit5 is a list of
                 // line marks of unread size (0x22 on most school handouts, whose
@@ -276,6 +327,7 @@ impl PageStyle {
             rows: if two_up { 1 } else { self.rows.clamp(1, 2) },
             short_cols: false,
             background: (None, false),
+            headers: crate::layout::Headers(std::sync::Arc::new(self.headers.iter().map(|&(place, align, dist)| crate::layout::Header { place, align, dist_mm: dist as f32 / 100.0, blocks: Vec::new() }).collect())),
             ..PageSetup::default()
         }
     }
