@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.4.6, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.4.7, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.4.6, reader + editor that saves back to `.jtd` (developer preview).
 
 | Version | What changed |
 |---|---|
+| 0.4.7 | With input methods that report every key to the IME (Korean and others), Backspace, Delete and arrows work again and syllables no longer fall apart into letters; tidier tool palette whose buttons no longer wrap |
 | 0.4.6 | **Vertical writing** shown and edited vertically (kanji and kana upright, 、。 at the top right, long vowels and brackets turned); Word export writes it vertically too |
 | 0.4.5 | No stray marks next to pictures; new screenshots |
 | 0.4.4 | Pictures (GIF, JPEG, PNG, BMP) drawn where they sit; also in PDF export |

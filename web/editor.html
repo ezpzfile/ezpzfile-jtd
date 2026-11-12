@@ -136,8 +136,18 @@ details.sec > summary::-webkit-details-marker { display: none; }
 details.sec > summary .chev { color: var(--ink-300); transition: transform .15s; }
 details.sec[open] > summary .chev { transform: rotate(90deg); }
 .secbody { padding: 0 14px 14px; display: grid; gap: 10px; }
-.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.row > label { color: var(--ink-500); font-size: 12px; min-width: 40px; }
+.row { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; }
+.row > label { color: var(--ink-500); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row > .ctl { display: flex; gap: 6px; align-items: center; min-width: 0; flex-wrap: nowrap; }
+.row > .ctl .swatch { flex: none; }
+.row > .ctl > .pbtn { white-space: nowrap; }
+.tseg { display: inline-flex; gap: 2px; padding: 2px; background: var(--ink-50); border-radius: var(--r-md); }
+.tseg .tb { width: 34px; height: 28px; border: 0; background: none; border-radius: 6px; color: var(--ink-700); display: grid; place-items: center; padding: 0; }
+.tseg .tb:hover { background: var(--ink-100); }
+.tseg .tb.on { background: var(--card); color: var(--brand-600); box-shadow: 0 1px 2px rgba(11, 16, 32, .08); }
+.tseg .tb svg.i { width: 16px; height: 16px; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.btns > .pbtn { justify-content: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lab { color: var(--ink-500); font-size: 12px; }
 .pbtn { border: 0; background: var(--ink-50); color: var(--ink-900); border-radius: var(--r-md); padding: 6px 10px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
 .pbtn:hover { background: var(--ink-100); }
@@ -148,7 +158,7 @@ details.sec[open] > summary .chev { transform: rotate(90deg); }
 .swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--hair); padding: 0; }
 .swatch:hover { outline: 2px solid var(--ink-100); }
 .num, .field, .sel-fill { border: 0; background: var(--ink-50); border-radius: var(--r-md); padding: 6px 8px; outline: none; }
-.num { width: 48px; }
+.num { width: 44px; flex: none; }
 .field { width: 100%; }
 .num:focus, .field:focus, .sel-fill:focus { box-shadow: 0 0 0 2px var(--brand-100); background: #fff; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; }

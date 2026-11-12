@@ -644,7 +644,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.6")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.4.7")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */
@@ -927,6 +927,17 @@ function pbtn(cmd, text, title, icon) {
   b.addEventListener("click", () => run(cmd));
   return b;
 }
+/** An icon-only button in a palette button group (state follows data-cmd like the others). */
+function tbtn(cmd, title, icon) {
+  const b = el("button", { class: "tb", "data-cmd": cmd, title, "aria-label": title });
+  b.innerHTML = ic(icon);
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", () => run(cmd));
+  return b;
+}
+/** A palette row: a fixed label column and controls that never wrap under it. */
+const prow = (label, ...ctl) => el("div", { class: "row" }, el("label", { text: label }), el("div", { class: "ctl" }, ...ctl));
+const group = (...b) => el("span", { class: "tseg" }, ...b);
 function actBtn(text, fn, primary = false) {
   const b = el("button", { class: primary ? "pbtn primary" : "pbtn", text });
   b.addEventListener("click", fn);
@@ -936,7 +947,7 @@ function actBtn(text, fn, primary = false) {
 const RAIL = [["sec-char", tr("文字"), "type"], ["sec-para", tr("段落"), "align-left"], ["sec-rule", tr("罫線"), "table-2"], ["sec-find", tr("検索"), "search"], ["sec-count", tr("文字数"), "hash"]];
 function buildPalette() {
   const p = $("#palette");
-  const swatches = el("div", { class: "row", style: "gap:4px" }, el("label", { text: tr("色"), style: "margin-right:2px" }),
+  const swatches = prow(tr("色"),
     ...["", "#0b1020", "#ef4444", "#0155ff", "#00b894", "#7c3aed", "#f59e0b"].map((c) => {
       const b = el("button", { class: "swatch", title: c || tr("自動"), "aria-label": c || tr("自動"), style: c ? `background:${c}` : "background:linear-gradient(135deg,#fff 44%,#ef4444 44%,#ef4444 56%,#fff 56%)" });
       b.addEventListener("mousedown", (e) => e.preventDefault());
@@ -952,23 +963,23 @@ function buildPalette() {
   const hide = el("button", { class: "ib", title: tr("ツールパレットを隠す"), "aria-label": tr("ツールパレットを隠す") });
   hide.innerHTML = ic("chevron-right");
   hide.addEventListener("click", () => toggleView("palette"));
-  const sizeRow = el("div", { class: "row" }, el("label", { text: tr("サイズ") }), sizeControl());
+  const sizeRow = prow(tr("サイズ"), sizeControl());
   p.append(
     el("div", { class: "panelhead" }, el("span", { text: tr("ツールパレット") }), hide),
     section("sec-char", tr("文字"), true, sizeRow,
-      el("div", { class: "row" }, el("label", { text: tr("飾り") }), pbtn("bold", tr("太字"), tr("太字 (Ctrl+B)")), pbtn("italic", tr("斜体"), tr("斜体 (Ctrl+I)")), pbtn("underline", tr("下線"), tr("下線 (Ctrl+U)"))),
+      prow(tr("飾り"), group(tbtn("bold", tr("太字 (Ctrl+B)"), "bold"), tbtn("italic", tr("斜体 (Ctrl+I)"), "italic"), tbtn("underline", tr("下線 (Ctrl+U)"), "underline"))),
       swatches),
     section("sec-para", tr("段落"), false,
-      el("div", { class: "row" }, el("label", { text: tr("揃え") }), pbtn("alignLeft", tr("左"), tr("左寄せ (Ctrl+4)"), "align-left"), pbtn("alignCenter", tr("中央"), tr("センタリング (Ctrl+5)"), "align-center"), pbtn("alignRight", tr("右"), tr("右寄せ (Ctrl+6)"), "align-right")),
-      el("div", { class: "row" }, el("label", { text: tr("ページ") }), pbtn("pageBreak", tr("改ページ"), tr("改ページ (Ctrl+Y)"), "separator-horizontal"))),
+      prow(tr("揃え"), group(tbtn("alignLeft", tr("左寄せ (Ctrl+4)"), "align-left"), tbtn("alignCenter", tr("センタリング (Ctrl+5)"), "align-center"), tbtn("alignRight", tr("右寄せ (Ctrl+6)"), "align-right"))),
+      prow(tr("ページ"), pbtn("pageBreak", tr("改ページ"), tr("改ページ (Ctrl+Y)"), "separator-horizontal"))),
     section("sec-rule", tr("罫線"), false,
-      el("div", { class: "row" }, el("label", { text: tr("表作成") }), rows, el("span", { class: "lab", text: tr("行") }), cols, el("span", { class: "lab", text: tr("列") })),
-      el("div", { class: "row" }, el("label", { text: "" }), actBtn(tr("表を作成"), () => edit(() => { if (!S.ed.insertTable(+rows.value, +cols.value)) toast(tr("表は本文の段落にだけ作成できます")); }, true), true)),
-      el("div", { class: "row" }, el("label", { text: tr("行") }), pbtn("rowAbove", tr("上に挿入"), tr("行を上に挿入"), "between-horizontal-end"), pbtn("rowBelow", tr("下に挿入"), tr("行を下に挿入"), "between-horizontal-start"), pbtn("rowDelete", tr("削除"), tr("行を削除"), "trash-2")),
+      prow(tr("新しい表"), rows, el("span", { class: "lab", text: "×" }), cols,
+        actBtn(tr("作成"), () => edit(() => { if (!S.ed.insertTable(+rows.value, +cols.value)) toast(tr("表は本文の段落にだけ作成できます")); }, true), true)),
+      prow(tr("行"), group(tbtn("rowAbove", tr("行を上に挿入"), "between-horizontal-end"), tbtn("rowBelow", tr("行を下に挿入"), "between-horizontal-start"), tbtn("rowDelete", tr("行を削除"), "trash-2"))),
       el("p", { class: "note", text: tr("表の中では Tab で次のセルへ移動します。") })),
     section("sec-find", tr("検索・置換"), false,
-      findIn, el("div", { class: "row" }, actBtn(tr("前を検索"), () => doFind(true)), actBtn(tr("次を検索"), () => doFind(false), true)),
-      replIn, el("div", { class: "row" }, actBtn(tr("置換"), doReplace), actBtn(tr("すべて置換"), doReplaceAll))),
+      findIn, el("div", { class: "btns" }, actBtn(tr("前を検索"), () => doFind(true)), actBtn(tr("次を検索"), () => doFind(false), true)),
+      replIn, el("div", { class: "btns" }, actBtn(tr("置換"), doReplace), actBtn(tr("すべて置換"), doReplaceAll))),
     section("sec-count", tr("文字数"), false,
       el("div", { class: "kv" }, el("span", { text: tr("全体") }), el("b", { id: "cnt-all", text: "0" }), el("span", { text: tr("選択範囲") }), el("b", { id: "cnt-sel", text: "0" }), el("span", { text: tr("ページ") }), el("b", { id: "cnt-pages", text: "1" }))),
   );
@@ -1054,7 +1065,10 @@ function keyCommand(e) {
 
 function onKeyDown(e) {
   if (menuKey(e)) return;
-  if (S.composing || e.isComposing || e.keyCode === 229) return;
+  if (S.composing || e.isComposing) return;
+  // keyCode 229 means "the IME saw this key". Korean (and some other) input methods report every key
+  // that way while their mode is on, even when nothing is being composed: editing and moving keys are ours then
+  if (e.keyCode === 229 && !/^(Backspace|Delete|Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Tab|Escape)$/.test(e.key)) return;
   const ed = S.ed;
   const mod = e.ctrlKey || e.metaKey;
   if (k_is(e, "Escape")) { e.preventDefault(); showMenu($$(".menu")[0], true); return; }
@@ -1117,14 +1131,19 @@ function bindInput() {
     S.composing = false;
     S.ed.setPreedit("");
     if (e.data) S.ed.insertText(e.data);
-    ime.value = "";
-    setTimeout(() => { ime.value = ""; }, 0);
+    // Korean input ends one syllable and starts the next right away: clearing the box
+    // now would cut the next syllable into separate letters. Clear it once nothing is composed.
+    S.committed = e.data || "";
+    setTimeout(() => { if (!S.composing) ime.value = ""; }, 0);
     refresh();
   });
   ime.addEventListener("input", (e) => {
     if (S.composing || e.isComposing || e.inputType === "insertCompositionText" || e.inputType === "insertFromComposition") return;
     if (e.inputType === "insertFromPaste") return; // handled in paste
-    const v = ime.value;
+    const v = e.inputType === "insertText" && e.data != null ? e.data : ime.value;
+    // some browsers repeat the text just committed by the IME as a plain input
+    if (S.committed && v === S.committed) { S.committed = ""; ime.value = ""; return; }
+    S.committed = "";
     ime.value = "";
     if (v) { S.ed.insertText(v); S.lastCmd = null; refresh(); }
   });
