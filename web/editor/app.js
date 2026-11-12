@@ -465,7 +465,19 @@ function paintItems(g, data, marks, part) {
       }
       shape(0, 0); g.fill();
     }
-    if (!it.noline) {
+    if (!it.noline && it.double) {
+      // 二重線: a thick line along the edge, a gap, a thin line inside
+      // (一太郎ビューア: about 2.6, 0.7 and 0.7 times the line width)
+      const lw = Math.max(0.5, it.lw), inset = (d, w) => {
+        g.lineWidth = w; g.beginPath();
+        const r = Math.max(0, it.r - d);
+        if (g.roundRect && r > 0) g.roundRect(it.x + d, it.y + d, it.w - 2 * d, it.h - 2 * d, r); else g.rect(it.x + d, it.y + d, it.w - 2 * d, it.h - 2 * d);
+        g.stroke();
+      };
+      g.strokeStyle = it.color || "#000";
+      inset(1.3 * lw, 2.6 * lw);
+      inset(3.65 * lw, 0.7 * lw);
+    } else if (!it.noline) {
       g.strokeStyle = it.color || "#000";
       g.lineWidth = Math.max(0.5, it.lw);
       if (it.dot) g.setLineDash([Math.max(1, it.lw), Math.max(2, it.lw * 2)]);
@@ -800,7 +812,7 @@ const CMDS = {
   keymapIchitaro: () => setKeymap("ichitaro"),
   count: () => showInfo(tr("文字数"), [[tr("文字数（空白を除く）"), S.status.chars.toLocaleString()], [tr("ページ数"), S.status.pages], [tr("選択範囲"), $("#cnt-sel").textContent]]),
   shortcuts: () => showShortcuts(),
-  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.13")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
+  about: () => showInfo(tr("JTD エディタについて"), [[tr("バージョン"), tr("{0} (開発版)", "0.5.14")], [tr("内容"), tr("一太郎文書（.jtd）を開いて編集できるオープンソースのエディタです。ファイルはこのブラウザの中だけで処理されます。")], [tr("ライセンス"), "MIT"], [tr("注意"), tr("一太郎は株式会社ジャストシステムの商標です。本ソフトは同社と関係ありません。")]]),
 };
 
 /** Commands that work on the empty screen. */

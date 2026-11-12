@@ -346,8 +346,9 @@ mod tests {
 
     #[test]
     fn box_direction_and_size() {
-        // 0201 box; 6668 group with 6006 (flags 0d: direction 1, left and
-        // right 1 mm) and 6004 (character size 11.99 mm)
+        // 0201 box; 6668 group with 6006 (flags 0d: direction 1, the first
+        // two margins 1 mm: top and bottom with no 6009 ending in 8) and 6004
+        // (character size 11.99 mm)
         let mut b = vec![0u8; 8];
         b.extend_from_slice(&[0x02, 0x01, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0]);
         let recs: Vec<u8> = [
@@ -361,7 +362,7 @@ mod tests {
         let st = box_styles(&b);
         assert_eq!(st.len(), 1);
         assert!(st[0].vertical);
-        assert_eq!(st[0].pad, [100, 100, 0, 0]);
+        assert_eq!(st[0].pad, [0, 0, 100, 100]);
         assert_eq!(st[0].size, Some(1199));
     }
 
@@ -391,6 +392,10 @@ pub struct TextBox {
     /// per line in half-width characters (字数), when given.
     pub line_gap: Option<u16>,
     pub half_chars: Option<u16>,
+    /// The box's text colour (`6004` bytes 48-51, `00 BB GG RR`) when not
+    /// black: characters with no colour of their own take it (a
+    /// 学校だより's navy 5月の行事予定, a green 6月の行事予定).
+    pub text_color: Option<String>,
 }
 
 /// A text box's frame line (`/LayoutBox` records `6007` and `0401`).
@@ -402,6 +407,8 @@ pub struct Border {
     /// Corner radius
     pub radius_mm: f32,
     pub dotted: bool,
+    /// A double line (`0401` switch +29 = 3).
+    pub double: bool,
     /// The line is drawn (a box can have only a fill).
     pub line: bool,
     /// Fill: none, one colour, or gradient stops (0-1, colour) at `angle`
@@ -420,6 +427,10 @@ struct BoxStyle {
     line: Option<u16>,
     gap: Option<u16>,
     half_chars: Option<u16>,
+    text_color: Option<String>,
+    /// 6006's margins in the order stored, and the u32 that ends 6009
+    pad_bits: [Option<u16>; 4],
+    end6009: Option<u32>,
     /// `6007` bit 0 (u8) present: such boxes show their line only when
     /// filled (a 縦組み 学校だより: labels yes, its title and stars no)
     line_u8: bool,
@@ -466,10 +477,11 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                             st.vertical = b[p] == 1;
                             p += 1;
                         }
+                        // (kept as stored; see `pad_bits`)
                         if f & 2 == 0 {
                             for k in 0..4 {
                                 if f & (4 << k) != 0 && p + 2 <= q + 4 + l {
-                                    st.pad[k] = u16::from_be_bytes([b[p], b[p + 1]]).min(3000);
+                                    st.pad_bits[k] = Some(u16::from_be_bytes([b[p], b[p + 1]]).min(3000));
                                     p += 2;
                                 }
                             }
@@ -480,6 +492,12 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                     if t == 0x6004 && l >= 7 && q + 11 <= end && b[q + 4] == 3 {
                         let v = u32::from_be_bytes([b[q + 7], b[q + 8], b[q + 9], b[q + 10]]);
                         st.size = Some(v).filter(|v| (100..=10000).contains(v));
+                        if l >= 56 && q + 4 + 56 <= end {
+                            let c = &b[q + 4 + 48..q + 4 + 52];
+                            if c[0] == 0 && c[1..] != [0, 0, 0] {
+                                st.text_color = Some(format!("#{:02x}{:02x}{:02x}", c[3], c[2], c[1]));
+                            }
+                        }
                     }
                     // 6009: mask ff, then (u8 01, u16) four times: the line
                     // gap (行間, 1/100 mm), two zeros, the characters per line
@@ -491,6 +509,9 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                     // sheet, 玉東中便り — fill their width at 1.25-character
                     // lines whatever these say)
                     let tail = (l >= 4 && q + 4 + l <= end).then(|| u32::from_be_bytes([b[q + l], b[q + l + 1], b[q + l + 2], b[q + l + 3]]));
+                    if t == 0x6009 {
+                        st.end6009 = tail;
+                    }
                     if t == 0x6009 && l >= 13 && q + 17 <= end && b[q + 4] == 0xff && b[q + 5] == 1 && tail != Some(8) {
                         st.gap = Some(u16::from_be_bytes([b[q + 6], b[q + 7]])).filter(|&g| g <= 3000);
                         if b[q + 14] == 1 {
@@ -509,6 +530,21 @@ fn box_styles(b: &[u8]) -> Vec<BoxStyle> {
                     }
                 }
                 q += 4 + l;
+            }
+            // 6006's four margins are top, bottom, left, right in boxes whose
+            // 6009 ends in 4 or 1500 (a 学校だより's orange box of 3, 3, 8, 8
+            // starts its text 8 mm in from its left and 3 mm below its top
+            // in 一太郎ビューア), and left, right, top, bottom in those whose
+            // 6009 ends in 8 (a handout's 「リーダーの仕事」 box of 2, -, 2,
+            // 2 keeps its seven characters on one line). `pad` is left,
+            // right, top, bottom
+            if let Some(st) = out.last_mut() {
+                let order = if st.end6009 == Some(8) { [0, 1, 2, 3] } else { [2, 3, 0, 1] };
+                for k in 0..4 {
+                    if let Some(v) = st.pad_bits[k] {
+                        st.pad[order[k]] = v;
+                    }
+                }
             }
             o = end;
         } else {
@@ -575,6 +611,7 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
             size_pt: styles.get(i).and_then(|s| s.size).map(|v| (v as f32 / 100.0 * 72.0 / 25.4 * 2.0).round() / 2.0),
             line_gap: styles.get(i).and_then(|s| s.gap),
             half_chars: styles.get(i).and_then(|s| s.half_chars),
+            text_color: styles.get(i).and_then(|s| s.text_color.clone()),
             border: styles.get(i).and_then(|s| {
                 let fill: Vec<(f32, String)> = match s.fill_type {
                     1 => vec![(0.0, s.fill_color.clone())],
@@ -600,6 +637,7 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
                         width_mm: (w as f32 / 100.0).clamp(0.1, 2.0),
                         radius_mm: if t(24) != 0 { (r as f32 / 100.0).clamp(0.0, 30.0) } else { 0.0 },
                         dotted: line && t(23) != 0,
+                        double: line && t(29) == 3,
                         line,
                         fill,
                         angle: s.angle,
@@ -620,6 +658,7 @@ pub fn read_boxes(cfb: &Cfb, style_budget: &mut usize) -> Vec<TextBox> {
                     width_mm: (w as f32 / 100.0).clamp(0.1, 1.0),
                     radius_mm: if s.kind == 150 { (r as f32 / 100.0).clamp(0.0, 20.0) } else { 0.0 },
                     dotted: line.is_some_and(|l| if s.line_u8 { l == 2 } else { l <= 4 || l == 18 || l == 20 }),
+                    double: false,
                     line: line.is_some(),
                     fill,
                     angle: s.angle,

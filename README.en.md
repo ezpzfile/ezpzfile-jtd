@@ -12,7 +12,7 @@
 An open-source reader and format specification for JustSystems Ichitaro files,
 in the spirit of [rhwp](https://github.com/edwardkim/rhwp) for HWP. Files never leave your device.
 
-Status: **v0.5.13, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
+Status: **v0.5.14, reader + editor that saves back to `.jtd` (developer preview).** Not affiliated with JustSystems.
 
 [![The JTD editor](docs/images/editor-en.png)](https://ezpzfile.com/jtd-editor)
 
@@ -39,6 +39,7 @@ Status: **v0.5.13, reader + editor that saves back to `.jtd` (developer preview)
 
 | Version | What changed |
 |---|---|
+| 0.5.14 | Double lines round text boxes, each box's own text colour (navy and green headings), and the order of a box's margins (top, bottom, left, right) as in Ichitaro Viewer |
 | 0.5.13 | Pictures anchored mid-paragraph go with their character's line. Figure outlines take their own line colour (black edges of holly and a candy cane), diagonal-stripe fills, and very thin lines show. Text box lines of width 0 (hairlines) are drawn. A box's 字数 no longer cuts a line that still fits the box |
 | 0.5.12 | Ruled-line colours, cell shading and cell alignment, 均等割付, text box lines (shadow, rounded, dotted) with their line gap and 字数, figures without a line, texture figures (wood grain), pictures anchored in table rows, and empty lines moved by text boxes, as in Ichitaro Viewer. Text is drawn above figures |
 | 0.5.11 | Headers, footers (柱) and page numbers are shown, with the place, alignment and distance from the paper edge of Ichitaro Viewer. Small bitmaps keep their dots when enlarged |

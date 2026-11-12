@@ -614,6 +614,17 @@ See `figure.rs` for the byte layouts. In short:
   room is left; photos (0x300) push lines below. A handout's list landed at
   199 mm like 一太郎ビューア only this way.
 
+- **0.5.14** Measured against 一太郎ビューア. **observed**
+  - `/LayoutBox` `0401` switch +29 = 3 is a double line: a thick line at
+    the edge and a thin one inside (about 2.6 and 0.7 times the width, 0.7
+    apart).
+  - `6004` (the 75-byte form) bytes 48-51 are the box's text colour
+    (`00 BB GG RR`); characters with no colour of their own take it.
+  - `6006`'s four margins are top, bottom, left, right when the box's
+    `6009` ends in u32 4 or 1500 (an orange box of 3, 3, 8, 8 starts its
+    text 8 mm from its left and 3 mm below its top), and left, right, top,
+    bottom when it ends in 8.
+
 - **0.5.13** Measured against 一太郎ビューア. **observed**
   - A frame anchored past a paragraph's first character (`0000` anchor
     record after some text) is measured from the line that holds that

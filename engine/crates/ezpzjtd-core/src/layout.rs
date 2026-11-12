@@ -365,6 +365,10 @@ pub enum Item {
         color: String,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         dot: bool,
+        /// A double line (二重線): a thick line at the edge and a thin one
+        /// inside it (a 学校だより's 5月の行事予定 label)
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        double: bool,
         /// No line, only the fill.
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         noline: bool,
@@ -727,7 +731,7 @@ impl<'a> Ctx<'a> {
             let (w, h) = if self.setup.vertical { (self.setup.page_h(), self.setup.page_w()) } else { (self.setup.page_w(), self.setup.page_h()) };
             let mut bg = Vec::new();
             if let Some(c) = colour {
-                bg.push(Item::Rect { x: 0.0, y: 0.0, w, h, r: 0.0, lw: 0.0, color: c.clone(), dot: false, noline: true, fill: vec![(0.0, c.clone())], cell: false, angle: 0.0, shadow: None, z: 0 });
+                bg.push(Item::Rect { x: 0.0, y: 0.0, w, h, r: 0.0, lw: 0.0, color: c.clone(), dot: false, double: false, noline: true, fill: vec![(0.0, c.clone())], cell: false, angle: 0.0, shadow: None, z: 0 });
             }
             if pic {
                 bg.push(Item::Image { id: crate::frames::BACKGROUND, x: 0.0, y: 0.0, w, h, z: 0 });
@@ -1397,7 +1401,7 @@ fn layout_table(ctx: &mut Ctx, t: &Table, flat_start: &mut usize, pre: Option<&P
         for (ci, c) in row.cells.iter().enumerate() {
             if let Some(fill) = &c.shade {
                 let (l, r) = spans[ci];
-                ctx.items().push(Item::Rect { x: xu(l), y: top, w: xu(r) - xu(l), h: row_h, r: 0.0, lw: 0.0, color: fill.clone(), dot: false, noline: true, fill: vec![(0.0, fill.clone())], cell: true, angle: 0.0, shadow: None, z: 0 });
+                ctx.items().push(Item::Rect { x: xu(l), y: top, w: xu(r) - xu(l), h: row_h, r: 0.0, lw: 0.0, color: fill.clone(), dot: false, double: false, noline: true, fill: vec![(0.0, fill.clone())], cell: true, angle: 0.0, shadow: None, z: 0 });
             }
         }
         // Draw for real
@@ -1974,7 +1978,6 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
         // (a 48 pt line of ten characters in a box 9.98 characters long)
         // (half a character counts: 37 half-width on a 学校だより's box
         // hold 「４月２３日（火）、…校外学習」, 19 characters with 「）」 half)
-        let fit = ((inner_w / font + 0.05).floor() as u32).max(1);
         // (字数 counts the characters as written: 「５月の」 in 12 pt fills a
         // box of three 10.5 pt characters' 字数 that is 36.5 pt long)
         // (the size most of its characters have: a 11 pt heading over
@@ -2002,7 +2005,12 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 // of 17: a 学校便り's 生活目標 bar)
                 (c.ceil() as u32, ((inner_w - line) / 2.0 - 0.25).max(0.0) / MM, Some((line / c).min(font)))
             }
-            _ => (fit, 0.0, None),
+            // no 字数: as many as fit, at the character's own pitch (a
+            // handout's 「リーダーの仕事」 box, seven 11.5 pt characters in
+            // 28.75 mm) or a hair less (ten 48 pt characters in 9.98)
+            // no 字数: as many as fit, spread over the line (a 玉東中便り's
+            // 16 pt title box keeps 13 characters a line)
+            _ => (((inner_w / font + 0.05).floor() as u32).max(1), 0.0, None),
         };
         let sub = PageSetup {
             width_mm: width,
@@ -2033,7 +2041,26 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
             z_order: setup.z_order.clone(),
             ..PageSetup::default()
         };
-        let l = layout_with(&b.blocks, &sub, false, None, 1);
+        // the box's own text colour for characters with none
+        let coloured;
+        let blocks = match &b.text_color {
+            Some(c) => {
+                let mut v = b.blocks.clone();
+                for bl in &mut v {
+                    if let crate::doc::Block::Paragraph(p) = bl {
+                        for r in &mut p.runs {
+                            if r.style.color.is_none() {
+                                r.style.color = Some(c.clone());
+                            }
+                        }
+                    }
+                }
+                coloured = v;
+                &coloured
+            }
+            None => &b.blocks,
+        };
+        let l = layout_with(blocks, &sub, false, None, 1);
         let Some(page) = l.pages.first() else { continue };
         // text past the box's bottom is not shown
         let max_y = bh * MM;
@@ -2060,6 +2087,7 @@ pub fn box_items(doc: &crate::doc::Document, setup: &PageSetup) -> Vec<(u16, i32
                 lw: bd.width_mm * MM,
                 color: bd.color.clone(),
                 dot: bd.dotted,
+                double: bd.double,
                 noline: !bd.line,
                 fill: bd.fill.clone(),
                 cell: false,
